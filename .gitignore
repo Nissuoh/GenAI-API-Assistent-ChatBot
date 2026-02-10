@@ -1,1 +1,15 @@
+# Geheimnisse und Keys
 .env
+credentials.json
+token.json
+
+# Python Dateien
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# Datenbank
+*.sqlite3
+*.db
