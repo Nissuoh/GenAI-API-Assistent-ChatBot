@@ -13,3 +13,6 @@ venv/
 # Datenbank
 *.sqlite3
 *.db
+.vscode
+.idea
+.DS_Store
