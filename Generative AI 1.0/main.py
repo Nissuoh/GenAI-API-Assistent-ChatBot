@@ -22,6 +22,12 @@ O_KEY = os.getenv("OPENAI_API_KEY")
 G_KEY = os.getenv("GEMINI_API_KEY")
 OR_KEY = os.getenv("OPENROUTER_API_KEY")
 
+# Modelle
+openrouter_model = "arcee-ai/trinity-large-preview:free"
+# openrouter_model = "stepfun/step-3.5-flash:free"
+# openrouter_model = "z-ai/glm-4.5-air:free"
+# openrouter_model = "deepseek/deepseek-r1-0528:free"
+
 # Clients
 client_openai = OpenAI(api_key=O_KEY) if O_KEY else None
 client_gemini = genai.Client(api_key=G_KEY) if G_KEY else None
@@ -51,7 +57,7 @@ def call_openrouter_with_reasoning(
     messages = history + [{"role": "user", "content": message}]
 
     payload = {
-        "model": "arcee-ai/trinity-large-preview:free",
+        "model": openrouter_model,
         "messages": messages,
         "reasoning": {"enabled": True},
     }
