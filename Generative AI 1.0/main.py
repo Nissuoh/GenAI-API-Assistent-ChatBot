@@ -1,128 +1,79 @@
 import os
-import json
-import requests
-from typing import Dict, Any, List
-from dotenv import load_dotenv
+import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from google import genai
-from openai import OpenAI
+from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 
-# --- Setup ---
+# Eigene Module
+from database import init_db, save_message, get_chat_history
+from telegram_bot import setup_telegram
+from ai_logic import fetch_llm_response
+
 load_dotenv()
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+init_db()
 
-app = FastAPI()
-
-# Keys
-O_KEY = os.getenv("OPENAI_API_KEY")
-G_KEY = os.getenv("GEMINI_API_KEY")
-OR_KEY = os.getenv("OPENROUTER_API_KEY")
-
-# Modelle
-openrouter_model = "arcee-ai/trinity-large-preview:free"
-# openrouter_model = "stepfun/step-3.5-flash:free"
-# openrouter_model = "z-ai/glm-4.5-air:free"
-# openrouter_model = "deepseek/deepseek-r1-0528:free"
-
-# Clients
-client_openai = OpenAI(api_key=O_KEY) if O_KEY else None
-client_gemini = genai.Client(api_key=G_KEY) if G_KEY else None
-
-# WICHTIG: Statische Dateien (CSS/JS) verfügbar machen
-if os.path.exists(FRONTEND_DIR):
-    app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
+T_KEY = os.getenv("TELEGRAM_BOT_TOKEN")
+ALLOWED_ID = os.getenv("ALLOWED_TELEGRAM_ID")
+tg_app = setup_telegram(T_KEY) if T_KEY else None
 
 
-# --- Datenmodell ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if tg_app:
+        await tg_app.initialize()
+        await tg_app.start()
+        await tg_app.updater.start_polling(drop_pending_updates=True)
+        print("🚀 System gestartet: Web & Telegram synchron.")
+    yield
+    if tg_app:
+        await tg_app.updater.stop()
+        await tg_app.stop()
+
+
+app = FastAPI(lifespan=lifespan)
+app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
+
+
 class ChatRequest(BaseModel):
     message: str
-    history: List[Dict[str, Any]] = []
 
 
-# --- Hilfsfunktionen ---
-def call_openrouter_with_reasoning(
-    message: str, history: List[Dict[str, Any]]
-) -> Dict[str, Any]:
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OR_KEY}",
-        "Content-Type": "application/json",
-    }
-
-    # Historie für Trinity aufbereiten
-    messages = history + [{"role": "user", "content": message}]
-
-    payload = {
-        "model": openrouter_model,
-        "messages": messages,
-        "reasoning": {"enabled": True},
-    }
-
-    response = requests.post(url, headers=headers, json=payload, timeout=45)
-    response.raise_for_status()
-    data = response.json()
-
-    choice = data["choices"][0]["message"]
-    return {
-        "content": choice.get("content"),
-        "reasoning": choice.get("reasoning_details"),  # Einheitlicher Name
-        "source": "OpenRouter (Trinity)",
-    }
-
-
-# --- Routes ---
-@app.get("/")
-async def index():
-    index_path = os.path.join(FRONTEND_DIR, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return {"error": "index.html nicht im frontend-Ordner gefunden."}
+@app.get("/history")
+async def history():
+    return get_chat_history(limit=50)
 
 
 @app.post("/chat")
-async def chat_endpoint(request: ChatRequest):
-    if not request.message:
-        raise HTTPException(status_code=400, detail="Keine Nachricht empfangen.")
+async def chat(request: ChatRequest):
+    save_message("user", request.message)
 
-    # 1. OpenRouter (Trinity)
-    if OR_KEY:
-        try:
-            return call_openrouter_with_reasoning(request.message, request.history)
-        except Exception as e:
-            print(f"Trinity Fehler: {e}")
+    # Sync zu Telegram (deine Nachricht)
+    if tg_app:
+        await tg_app.bot.send_message(
+            chat_id=ALLOWED_ID, text=f"👤 Du (Web): {request.message}"
+        )
 
-    # 2. Fallback OpenAI
-    if client_openai:
-        try:
-            resp = client_openai.chat.completions.create(
-                model="gpt-4o", messages=[{"role": "user", "content": request.message}]
-            )
-            return {
-                "content": resp.choices[0].message.content,
-                "source": "OpenAI",
-                "reasoning": None,
-            }
-        except Exception as e:
-            print(f"OpenAI Fehler: {e}")
+    response = fetch_llm_response(request.message)
+    save_message("assistant", response["content"])
 
-    # 3. Fallback Gemini
-    if client_gemini:
-        try:
-            resp = client_gemini.models.generate_content(
-                model="gemini-2.0-flash", contents=request.message
-            )
-            return {"content": resp.text, "source": "Gemini", "reasoning": None}
-        except Exception as e:
-            print(f"Gemini Fehler: {e}")
+    # Sync zu Telegram (KI Antwort)
+    if tg_app:
+        await tg_app.bot.send_message(
+            chat_id=ALLOWED_ID, text=f"🤖 KI (Web): {response['content']}"
+        )
 
-    raise HTTPException(status_code=503, detail="Alle Provider fehlgeschlagen.")
+    return response
+
+
+@app.get("/")
+async def index():
+    return FileResponse("frontend/index.html")
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
