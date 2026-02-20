@@ -35,7 +35,7 @@ def fetch_llm_response(message: str):
         [system_instruction] + history + [{"role": "user", "content": message}]
     )
 
-    # --- SCHRITT 1: OpenAI (GPT-4o) ---
+    # --- SCHRITT 1: OpenAI (GPT-5-mini) ---
     if client_openai:
         try:
             resp = client_openai.chat.completions.create(
@@ -45,7 +45,7 @@ def fetch_llm_response(message: str):
         except Exception as e:
             print(f"⚠️ OpenAI Fehler: {e}")
 
-    # --- SCHRITT 2: Gemini (2.0 Flash) ---
+    # --- SCHRITT 2: Gemini (3.0 Flash) ---
     if client_gemini:
         try:
             # Einfacher Prompt für Gemini (kombiniert System-Anweisung und Nachricht)
