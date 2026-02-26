@@ -11,7 +11,6 @@
     --border-color: #eaeaea;
 }
 
-/* Globales Box-Sizing für stabilere Layouts */
 *,
 *::before,
 *::after {
@@ -65,10 +64,8 @@ body {
     flex-direction: column;
     gap: 16px;
     background: #fdfdfd;
-    scroll-behavior: smooth;
 }
 
-/* Custom Scrollbar */
 .chat-box::-webkit-scrollbar {
     width: 6px;
 }
@@ -82,7 +79,6 @@ body {
     border-radius: 10px;
 }
 
-/* Nachrichten-Styling */
 .message {
     padding: 12px 16px;
     border-radius: 18px;
@@ -122,7 +118,6 @@ body {
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.02);
 }
 
-/* Bild-Styling */
 .image-wrapper {
     display: flex;
     flex-direction: column;
@@ -152,7 +147,6 @@ body {
     opacity: 0.9;
 }
 
-/* Gedankengang (Reasoning) */
 .reasoning {
     align-self: flex-start;
     background-color: var(--reasoning-color);
@@ -165,7 +159,6 @@ body {
     max-width: 80%;
 }
 
-/* Input Bereich */
 .input-area {
     padding: 16px;
     background: white;
@@ -237,7 +230,6 @@ body {
     transform: scale(0.96);
 }
 
-/* Lade-Animation mit CSS-Spinner */
 .loading {
     font-size: 0.85rem;
     color: var(--text-light);
@@ -262,7 +254,6 @@ body {
     }
 }
 
-/* Mobile Anpassungen für Fullscreen-Feeling */
 @media (max-width: 480px) {
     body {
         align-items: flex-start;

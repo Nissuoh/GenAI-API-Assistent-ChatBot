@@ -7,7 +7,6 @@ const uploadBtn = document.getElementById('upload-btn');
 let isProcessing = false;
 let lastHistoryJSON = "";
 
-// Hilfsfunktion: XSS-Schutz für HTML-Injections
 function escapeHTML(str) {
     return str.replace(/[&<>'"]/g,
         tag => ({
@@ -20,8 +19,8 @@ function escapeHTML(str) {
     );
 }
 
-// 1. Funktion: Nachricht im Interface anzeigen
-function appendMessage(role, text) {
+// NEU: smoothScroll Option
+function appendMessage(role, text, smoothScroll = true) {
     const msgDiv = document.createElement('div');
     const cssClass = (role === 'assistant' || role === 'bot') ? 'bot' : 'user';
     msgDiv.className = `message ${cssClass}`;
@@ -29,8 +28,6 @@ function appendMessage(role, text) {
     if (text.startsWith("IMG_CONFIRM:")) {
         const content = text.replace("IMG_CONFIRM:", "");
         const [imageUrl, userText] = content.split("|");
-
-        // userText muss escaped werden, da wir innerHTML verwenden
         const safeText = userText ? escapeHTML(userText) : '';
 
         msgDiv.innerHTML = `
@@ -42,17 +39,18 @@ function appendMessage(role, text) {
             </div>
         `;
     } else {
-        // innerText ist von Natur aus sicher vor XSS
         msgDiv.innerText = text;
     }
 
     chatBox.appendChild(msgDiv);
-    chatBox.scrollTop = chatBox.scrollHeight;
+
+    if (smoothScroll) {
+        chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: 'smooth' });
+    }
 }
 
-// 2. Echtzeit-Funktion: Sync mit der Datenbank
 async function refreshChat() {
-    if (isProcessing) return; // Nicht synchronisieren, während wir aktiv etwas senden (verhindert Flackern)
+    if (isProcessing) return;
 
     try {
         const response = await fetch('/history');
@@ -63,15 +61,18 @@ async function refreshChat() {
 
         if (currentJSON !== lastHistoryJSON) {
             chatBox.innerHTML = '';
-            history.forEach(msg => appendMessage(msg.role, msg.content));
+            // False = Blockiert die Animation beim Laden
+            history.forEach(msg => appendMessage(msg.role, msg.content, false));
             lastHistoryJSON = currentJSON;
+
+            // Einmaliger harter Sprung ans Ende ohne Animation
+            chatBox.scrollTop = chatBox.scrollHeight;
         }
     } catch (error) {
         console.error("Fehler beim Abrufen der History:", error);
     }
 }
 
-// 3. BILD-UPLOAD
 if (uploadBtn && imageInput) {
     uploadBtn.onclick = () => imageInput.click();
 
@@ -81,14 +82,13 @@ if (uploadBtn && imageInput) {
 
         isProcessing = true;
         const message = userInput.value.trim();
-        userInput.value = ''; // Feld direkt leeren
+        userInput.value = '';
 
-        // Ladeindikator anzeigen
         const loadingMsg = document.createElement('div');
         loadingMsg.className = 'message bot loading';
         loadingMsg.innerText = '🖼️ Bild wird analysiert...';
         chatBox.appendChild(loadingMsg);
-        chatBox.scrollTop = chatBox.scrollHeight;
+        chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: 'smooth' });
 
         const formData = new FormData();
         formData.append('file', file);
@@ -97,11 +97,11 @@ if (uploadBtn && imageInput) {
         try {
             const response = await fetch('/upload', { method: 'POST', body: formData });
             if (!response.ok) throw new Error('Upload fehlgeschlagen');
-            lastHistoryJSON = ""; // Erzwingt kompletten Neuaufbau beim nächsten Sync
+            lastHistoryJSON = "";
             await refreshChat();
         } catch (error) {
             appendMessage('bot', '⚠️ Fehler: Bild-Analyse fehlgeschlagen.');
-            userInput.value = message; // Text bei Fehler zurückgeben
+            userInput.value = message;
         } finally {
             if (chatBox.contains(loadingMsg)) loadingMsg.remove();
             isProcessing = false;
@@ -110,7 +110,6 @@ if (uploadBtn && imageInput) {
     };
 }
 
-// 4. TEXT-CHAT (Mit Optimistic UI)
 async function sendMessage() {
     const message = userInput.value.trim();
     if (!message || isProcessing) return;
@@ -118,15 +117,13 @@ async function sendMessage() {
     isProcessing = true;
     userInput.value = '';
 
-    // Optimistic UI: Eigene Nachricht sofort anzeigen
-    appendMessage('user', message);
+    appendMessage('user', message, true);
 
-    // Ladeindikator für die KI
     const typingIndicator = document.createElement('div');
     typingIndicator.className = 'message bot loading';
     typingIndicator.innerText = 'Lumina tippt...';
     chatBox.appendChild(typingIndicator);
-    chatBox.scrollTop = chatBox.scrollHeight;
+    chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: 'smooth' });
 
     try {
         const response = await fetch('/chat', {
@@ -137,26 +134,24 @@ async function sendMessage() {
 
         if (!response.ok) throw new Error("Server Error");
 
-        lastHistoryJSON = ""; // Erzwingt UI-Update
+        lastHistoryJSON = "";
         await refreshChat();
     } catch (error) {
         appendMessage('bot', '⚠️ Fehler beim Senden der Nachricht.');
-        userInput.value = message; // Nachricht bei Fehler zurück ins Eingabefeld
+        userInput.value = message;
     } finally {
         if (chatBox.contains(typingIndicator)) typingIndicator.remove();
         isProcessing = false;
     }
 }
 
-// Event Listener
 sendBtn.onclick = sendMessage;
 userInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault(); // Verhindert Zeilenumbruch bei Enter
+        e.preventDefault();
         sendMessage();
     }
 });
 
-// Init & Polling
 setInterval(refreshChat, 2000);
 window.onload = refreshChat;

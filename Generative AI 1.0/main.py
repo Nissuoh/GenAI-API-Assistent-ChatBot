@@ -83,6 +83,7 @@ async def upload_image(file: UploadFile = File(...), message: str = Form("")) ->
         process_calendar_event(ai_msg)
         save_message("assistant", ai_msg)
 
+        # Sync zu Telegram (BILD)
         if tg_app and ALLOWED_ID:
             try:
                 with open(file_path, "rb") as photo:
@@ -113,6 +114,18 @@ async def chat(request: ChatRequest) -> dict:
 
         process_calendar_event(ai_msg)
         save_message("assistant", ai_msg)
+
+        # --- NEU: Sync zu Telegram (TEXT) ---
+        if tg_app and ALLOWED_ID:
+            try:
+                await tg_app.bot.send_message(
+                    chat_id=ALLOWED_ID, text=f"👤 Du (Web):\n{request.message}"
+                )
+                await tg_app.bot.send_message(
+                    chat_id=ALLOWED_ID, text=f"🤖 KI:\n{ai_msg}"
+                )
+            except Exception as tg_err:
+                print(f"⚠️ Telegram Sync Fehler: {tg_err}")
 
         return response
 
