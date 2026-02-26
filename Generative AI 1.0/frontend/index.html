@@ -3,25 +3,30 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Lumina AI Chat Interface">
+    <meta name="theme-color" content="#2b2b2b">
     <title>AI Chat Interface - Lumina</title>
     <link rel="stylesheet" href="/frontend/style.css">
 </head>
 
 <body>
+    <main class="chat-container">
+        <header class="chat-header">
+            <h1>Lumina</h1>
+        </header>
 
-    <div class="chat-container">
-        <div class="chat-header">Lumina</div>
-        <div id="chat-box" class="chat-box"></div>
+        <div id="chat-box" class="chat-box" aria-live="polite"></div>
+
         <div class="input-area">
-            <input type="file" id="image-input" accept="image/*" style="display: none;">
+            <input type="file" id="image-input" accept="image/*" style="display: none;" aria-hidden="true">
+            <button id="upload-btn" type="button" title="Bild hochladen" aria-label="Bild hochladen">📎</button>
 
-            <button id="upload-btn" type="button" title="Bild hochladen">📎</button>
-
-            <input type="text" id="user-input" placeholder="Nachricht eingeben..." autocomplete="off">
-            <button id="send-btn">Senden</button>
+            <input type="text" id="user-input" placeholder="Nachricht eingeben..." autocomplete="off"
+                aria-label="Chat Nachricht eingeben">
+            <button id="send-btn" aria-label="Nachricht senden">Senden</button>
         </div>
-    </div>
+    </main>
 
     <script src="/frontend/script.js"></script>
 </body>

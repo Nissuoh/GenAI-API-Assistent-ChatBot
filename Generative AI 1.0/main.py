@@ -1,6 +1,7 @@
 import os
 import asyncio
 import uuid
+from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -53,12 +54,17 @@ class ChatRequest(BaseModel):
 
 
 @app.get("/history")
-async def history():
+async def history() -> List[Dict[str, Any]]:
     return get_chat_history(limit=50)
 
 
 @app.post("/upload")
-async def upload_image(file: UploadFile = File(...), message: str = Form("")):
+async def upload_image(file: UploadFile = File(...), message: str = Form("")) -> dict:
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=400, detail="Fehler: Die Datei muss ein Bild sein."
+        )
+
     try:
         image_bytes = await file.read()
         ext = file.filename.split(".")[-1]
@@ -90,27 +96,33 @@ async def upload_image(file: UploadFile = File(...), message: str = Form("")):
                 )
             except Exception as tg_err:
                 print(f"⚠️ Telegram Sync Fehler: {tg_err}")
+
         return response
+
     except Exception as e:
         print(f"❌ Fehler im /upload Endpunkt: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Upload-Fehler: {str(e)}")
 
 
 @app.post("/chat")
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest) -> dict:
     try:
         save_message("user", request.message)
         response = await asyncio.to_thread(fetch_llm_response, request.message)
-        ai_msg = response.get("content", "Fehler.")
+        ai_msg = response.get("content", "Fehler bei der Antwortgenerierung.")
+
         process_calendar_event(ai_msg)
         save_message("assistant", ai_msg)
+
         return response
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Chat-Fehler.")
+        print(f"❌ Fehler im /chat Endpunkt: {e}")
+        raise HTTPException(status_code=500, detail=f"Chat-Fehler: {str(e)}")
 
 
 @app.get("/")
-async def index():
+async def index() -> FileResponse:
     return FileResponse("frontend/index.html")
 
 
