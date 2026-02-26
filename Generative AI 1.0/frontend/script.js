@@ -5,15 +5,14 @@ const imageInput = document.getElementById('image-input');
 const uploadBtn = document.getElementById('upload-btn');
 
 let isProcessing = false;
-let lastMessageCount = 0;
+let lastHistoryJSON = ""; // Speichert den exakten Inhalt, um Änderungen sofort zu erkennen
 
-// 1. Funktion: Nachricht im Interface anzeigen (mit Bild-Erkennung)
+// 1. Funktion: Nachricht im Interface anzeigen
 function appendMessage(role, text) {
     const msgDiv = document.createElement('div');
     const cssClass = (role === 'assistant' || role === 'bot') ? 'bot' : 'user';
     msgDiv.className = `message ${cssClass}`;
 
-    // PRÜFEN: Ist es ein Bild-Eintrag?
     if (text.startsWith("IMG_CONFIRM:")) {
         const content = text.replace("IMG_CONFIRM:", "");
         const [imageUrl, userText] = content.split("|");
@@ -34,19 +33,22 @@ function appendMessage(role, text) {
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-// 2. Echtzeit-Funktion: Prüft auf neue Nachrichten
+// 2. Echtzeit-Funktion: Zieht den exakten Chatverlauf aus der Datenbank (Sync mit Telegram)
 async function refreshChat() {
     try {
         const response = await fetch('/history');
         if (!response.ok) return;
         const history = await response.json();
 
-        if (history.length !== lastMessageCount) {
-            chatBox.innerHTML = '';
+        // Vergleicht den gesamten Text der Historie, nicht nur die Anzahl
+        const currentJSON = JSON.stringify(history);
+
+        if (currentJSON !== lastHistoryJSON) {
+            chatBox.innerHTML = ''; // Box komplett leeren
             history.forEach(msg => {
                 appendMessage(msg.role, msg.content);
             });
-            lastMessageCount = history.length;
+            lastHistoryJSON = currentJSON;
         }
     } catch (error) {
         console.error("Fehler beim Abrufen der History:", error);
@@ -68,6 +70,7 @@ if (uploadBtn && imageInput) {
         loadingMsg.className = 'message bot loading';
         loadingMsg.innerText = '🖼️ Bild wird analysiert...';
         chatBox.appendChild(loadingMsg);
+        chatBox.scrollTop = chatBox.scrollHeight;
 
         const formData = new FormData();
         formData.append('file', file);
@@ -76,13 +79,14 @@ if (uploadBtn && imageInput) {
         try {
             const response = await fetch('/upload', { method: 'POST', body: formData });
             if (!response.ok) throw new Error('Upload fehlgeschlagen');
-            await refreshChat();
+            await refreshChat(); // Sofort nach Upload aktualisieren
         } catch (error) {
             appendMessage('bot', 'Fehler: Bild-Analyse fehlgeschlagen.');
         } finally {
             if (chatBox.contains(loadingMsg)) chatBox.removeChild(loadingMsg);
             isProcessing = false;
             imageInput.value = '';
+            userInput.value = '';
         }
     };
 }
@@ -95,6 +99,9 @@ async function sendMessage() {
     isProcessing = true;
     userInput.value = '';
 
+    // Die Nachricht wird an den Server gesendet. 
+    // refreshChat() holt sie sich danach sofort aus der DB, 
+    // damit Web und Telegram die 100% gleiche Reihenfolge haben.
     try {
         await fetch('/chat', {
             method: 'POST',
@@ -112,5 +119,6 @@ async function sendMessage() {
 sendBtn.onclick = sendMessage;
 userInput.onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
 
-setInterval(refreshChat, 3000);
+// Schneller Takt für das Echtzeit-Gefühl mit Telegram (alle 2 Sekunden)
+setInterval(refreshChat, 2000);
 window.onload = refreshChat;

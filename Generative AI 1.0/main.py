@@ -12,12 +12,12 @@ from dotenv import load_dotenv
 from database import init_db, save_message, get_chat_history
 from telegram_bot import setup_telegram
 from ai_logic import fetch_llm_response, fetch_gemini_vision
+from calendar_utils import process_calendar_event
 
-# Laden der Umgebungsvariablen und Initialisierung der DB
+# Initialisierung
 load_dotenv()
 init_db()
 
-# Ordner für Bild-Uploads erstellen
 UPLOAD_DIR = "static/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -44,8 +44,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-
-# Statische Verzeichnisse mounten
 app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -61,11 +59,8 @@ async def history():
 
 @app.post("/upload")
 async def upload_image(file: UploadFile = File(...), message: str = Form("")):
-    """Verarbeitet Bilder, speichert sie lokal, analysiert sie und synct zu Telegram."""
     try:
         image_bytes = await file.read()
-
-        # 1. Bild lokal speichern für das Web-Interface
         ext = file.filename.split(".")[-1]
         file_name = f"{uuid.uuid4()}.{ext}"
         file_path = os.path.join(UPLOAD_DIR, file_name)
@@ -73,36 +68,28 @@ async def upload_image(file: UploadFile = File(...), message: str = Form("")):
         with open(file_path, "wb") as f:
             f.write(image_bytes)
 
-        # 2. URL für Frontend und DB-Eintrag
         image_url = f"/static/uploads/{file_name}"
-        db_entry = f"IMG_CONFIRM:{image_url}|{message}"
-        save_message("user", db_entry)
+        save_message("user", f"IMG_CONFIRM:{image_url}|{message}")
 
-        # 3. KI-Analyse
         response = await asyncio.to_thread(fetch_gemini_vision, message, image_bytes)
         ai_msg = response.get("content", "Keine Antwort erhalten.")
-        source = response.get("source", "Unbekannt")
 
-        # 4. KI-Antwort speichern
+        process_calendar_event(ai_msg)
         save_message("assistant", ai_msg)
 
-        # 5. SYNC ZU TELEGRAM (Jetzt mit echtem Bild!)
         if tg_app and ALLOWED_ID:
             try:
-                # Wir öffnen die eben gespeicherte Datei und senden sie als Foto
                 with open(file_path, "rb") as photo:
                     await tg_app.bot.send_photo(
                         chat_id=ALLOWED_ID,
                         photo=photo,
                         caption=f"👤 Du (Web):\n{message}",
                     )
-                # Dann die KI-Antwort als Text
                 await tg_app.bot.send_message(
-                    chat_id=ALLOWED_ID, text=f"🤖 KI ({source}):\n{ai_msg}"
+                    chat_id=ALLOWED_ID, text=f"🤖 KI:\n{ai_msg}"
                 )
             except Exception as tg_err:
                 print(f"⚠️ Telegram Sync Fehler: {tg_err}")
-
         return response
     except Exception as e:
         print(f"❌ Fehler im /upload Endpunkt: {e}")
@@ -113,20 +100,10 @@ async def upload_image(file: UploadFile = File(...), message: str = Form("")):
 async def chat(request: ChatRequest):
     try:
         save_message("user", request.message)
-        if tg_app and ALLOWED_ID:
-            await tg_app.bot.send_message(
-                chat_id=ALLOWED_ID, text=f"👤 Du (Web): {request.message}"
-            )
-
         response = await asyncio.to_thread(fetch_llm_response, request.message)
         ai_msg = response.get("content", "Fehler.")
-
+        process_calendar_event(ai_msg)
         save_message("assistant", ai_msg)
-        if tg_app and ALLOWED_ID:
-            await tg_app.bot.send_message(
-                chat_id=ALLOWED_ID, text=f"🤖 KI ({response.get('source')}): {ai_msg}"
-            )
-
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail="Chat-Fehler.")

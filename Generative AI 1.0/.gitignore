@@ -1,20 +1,27 @@
-# Geheimnisse und Keys
+# API-Schlüssel, Tokens und Zugangsdaten
 .env
 credentials.json
 token.json
 
-# Python Dateien
+# Datenbanken
+*.db
+*.sqlite3
+assistant_memory.db
+
+# Uploads und temporäre Dateien
+static/uploads/
+frontend/uploads/
+
+# Python Cache und virtuelle Umgebungen
 __pycache__/
 *.py[cod]
 *$py.class
-venv/
 .venv/
+venv/
+env/
 
-# Datenbank
-*.sqlite3
-*.db
-.vscode
-.idea
+# IDEs und OS-Dateien
+.vscode/
+.idea/
 .DS_Store
-
-
+Thumbs.db

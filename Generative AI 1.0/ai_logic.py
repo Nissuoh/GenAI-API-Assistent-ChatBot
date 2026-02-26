@@ -1,6 +1,7 @@
 import os
 import requests
 import base64
+import datetime  # Hinzugefügt für die Zeitberechnung von Terminen
 from openai import OpenAI
 from google import genai
 from database import get_all_info, get_chat_history
@@ -27,10 +28,31 @@ def fetch_llm_response(message: str, image_bytes: bytes = None):
     memories = get_all_info()
     history = get_chat_history(limit=10)
 
+    # Aktuelle Zeit, damit die KI "morgen" oder "nächsten Montag" zuordnen kann
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     memory_context = "Fakten über den Nutzer:\n" + "\n".join(
         [f"- {k}: {v}" for k, v in memories]
     )
-    system_instruction = f"Du bist ein hilfreicher Assistent. {memory_context}"
+
+    # System-Anweisung um Kalender-Logik ergänzt und strikt formatiert
+    # In ai_logic.py innerhalb von fetch_llm_response
+
+    system_instruction = (
+        f"Du bist Lumina. Aktuelle Zeit: {now}. {memory_context} "
+        "DEINE HAUPTAUFGABE: Termine autonom in den Google Kalender eintragen. "
+        "REGELN FÜR TERMINE:\n"
+        "1. Frag NIEMALS nach Dauer, Erinnerung oder Format (.ics/Link).\n"
+        "2. Entscheide selbst: Wenn keine Dauer im Text steht, nimm 30 oder 60 Minuten (was logischer ist).\n"
+        "3. Erstelle IMMER am Ende deiner Antwort den [CALENDAR_EVENT] Block.\n"
+        "4. Bestätige dem Nutzer kurz, dass du den Termin eingetragen hast.\n\n"
+        "FORMAT:\n"
+        "[CALENDAR_EVENT]\n"
+        "Title: <Titel>\n"
+        "Start: <YYYY-MM-DDTHH:MM:SSZ>\n"
+        "Description: <Zusatzinfo>\n"
+        "[/CALENDAR_EVENT]"
+    )
 
     # --- SCHRITT 1: OpenAI (GPT-5 Mini / GPT-4o Vision) ---
     if client_openai:
@@ -45,7 +67,8 @@ def fetch_llm_response(message: str, image_bytes: bytes = None):
                         "content": [
                             {
                                 "type": "text",
-                                "text": message or "Was siehst du auf diesem Bild?",
+                                "text": message
+                                or "Was siehst du auf diesem Bild? Extrahiere Termine falls vorhanden.",
                             },
                             {
                                 "type": "image_url",
@@ -63,7 +86,6 @@ def fetch_llm_response(message: str, image_bytes: bytes = None):
                     + [{"role": "user", "content": message}]
                 )
 
-            # Hinweis: Falls gpt-5-mini Vision noch nicht unterstützt, hier gpt-4o nutzen
             resp = client_openai.chat.completions.create(
                 model="gpt-5-mini", messages=messages, timeout=25
             )
@@ -74,9 +96,8 @@ def fetch_llm_response(message: str, image_bytes: bytes = None):
     # --- SCHRITT 2: Gemini (3.0 Flash) ---
     if client_gemini:
         try:
-            prompt = f"{system_instruction}\n\nNutzer: {message or 'Bildanalyse'}"
+            prompt = f"{system_instruction}\n\nNutzer: {message or 'Bildanalyse auf Termine'}"
             if image_bytes:
-                # Korrektes Format für das neue Google GenAI SDK
                 from google.genai import types
 
                 contents = [
