@@ -5,6 +5,7 @@
     --user-msg-color: #007aff;
     --text-dark: #2c3e50;
     --shadow: 0 8px 24px rgba(149, 157, 165, 0.2);
+    --reasoning-color: #f8f9fa;
 }
 
 body {
@@ -48,6 +49,7 @@ body {
     background: #fdfdfd;
 }
 
+/* Nachrichten-Styling */
 .message {
     padding: 12px 16px;
     border-radius: 15px;
@@ -55,7 +57,7 @@ body {
     font-size: 14.5px;
     line-height: 1.5;
     position: relative;
-    transition: transform 0.2s ease;
+    word-wrap: break-word;
 }
 
 .user {
@@ -73,48 +75,111 @@ body {
     border-bottom-left-radius: 4px;
 }
 
-/* Lade-Animation */
-.typing {
-    font-style: italic;
-    font-size: 12px;
-    color: #999;
+/* --- NEU: Bild-Styling --- */
+.image-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
+.chat-img {
+    max-width: 100%;
+    max-height: 250px;
+    border-radius: 10px;
+    cursor: pointer;
+    display: block;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    transition: transform 0.2s, opacity 0.2s;
+}
+
+.chat-img:hover {
+    transform: scale(1.02);
+    opacity: 0.9;
+}
+
+.img-caption {
+    margin: 0;
+    font-size: 0.9em;
+    line-height: 1.4;
+}
+
+/* Styling für den Gedankengang (Reasoning) */
+.reasoning {
+    align-self: flex-start;
+    background-color: var(--reasoning-color);
+    color: #7f8c8d;
+    border-left: 3px solid #ddd;
+    font-size: 0.85em;
+    padding: 10px;
+    margin-bottom: -5px;
+    border-radius: 8px;
+    max-width: 80%;
+}
+
+/* Input Bereich mit Upload-Button */
 .input-area {
-    padding: 20px;
+    padding: 15px 20px;
     background: white;
     display: flex;
+    align-items: center;
     gap: 10px;
     border-top: 1px solid #eee;
+}
+
+#upload-btn {
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: #8e8e93;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    transition: color 0.2s, transform 0.2s;
+}
+
+#upload-btn:hover {
+    color: var(--primary-color);
+    transform: scale(1.1);
 }
 
 input {
     flex: 1;
     padding: 12px 18px;
     border: 1.5px solid #eee;
-    border-radius: 12px;
+    border-radius: 25px;
     outline: none;
     transition: border-color 0.3s;
+    font-size: 14px;
 }
 
 input:focus {
     border-color: var(--primary-color);
 }
 
-button {
+#send-btn {
     background-color: var(--primary-color);
     color: white;
     border: none;
-    width: 60px;
-    height: 45px;
-    border-radius: 10px;
+    width: 50px;
+    height: 40px;
+    border-radius: 20px;
     cursor: pointer;
-    font-weight: bold;
+    font-size: 14px;
     display: flex;
     justify-content: center;
     align-items: center;
+    transition: transform 0.1s;
 }
 
-button:hover {
-    filter: brightness(1.1);
+#send-btn:active {
+    transform: scale(0.95);
+}
+
+/* Lade-Animation / Typing */
+.loading {
+    font-style: italic;
+    font-size: 12px;
+    color: #999;
+    padding: 5px 20px;
 }

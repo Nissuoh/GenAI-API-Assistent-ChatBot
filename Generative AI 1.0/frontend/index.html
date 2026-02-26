@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Chat Interface</title>
+    <title>AI Chat Interface - Lumina</title>
     <link rel="stylesheet" href="/frontend/style.css">
 </head>
 
@@ -14,6 +14,10 @@
         <div class="chat-header">Lumina</div>
         <div id="chat-box" class="chat-box"></div>
         <div class="input-area">
+            <input type="file" id="image-input" accept="image/*" style="display: none;">
+
+            <button id="upload-btn" type="button" title="Bild hochladen">📎</button>
+
             <input type="text" id="user-input" placeholder="Nachricht eingeben..." autocomplete="off">
             <button id="send-btn">Senden</button>
         </div>

@@ -1,22 +1,31 @@
 const chatBox = document.getElementById('chat-box');
 const userInput = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
+const imageInput = document.getElementById('image-input');
+const uploadBtn = document.getElementById('upload-btn');
 
 let isProcessing = false;
-let lastMessageCount = 0; // Merkt sich, wie viele Nachrichten wir schon haben
+let lastMessageCount = 0;
 
-// 1. Funktion: Nachricht im Interface anzeigen
+// 1. Funktion: Nachricht im Interface anzeigen (mit Bild-Erkennung)
 function appendMessage(role, text) {
     const msgDiv = document.createElement('div');
-    msgDiv.className = `message ${role}`;
+    const cssClass = (role === 'assistant' || role === 'bot') ? 'bot' : 'user';
+    msgDiv.className = `message ${cssClass}`;
 
-    if (role === 'reasoning') {
-        msgDiv.innerHTML = `<small><strong>Gedankengang:</strong></small><br>${text.replace(/\n/g, '<br>')}`;
-        msgDiv.style.opacity = "0.7";
-        msgDiv.style.fontSize = "0.85em";
-        msgDiv.style.borderLeft = "3px solid #ddd";
-        msgDiv.style.paddingLeft = "10px";
-        msgDiv.style.marginBottom = "5px";
+    // PRÜFEN: Ist es ein Bild-Eintrag?
+    if (text.startsWith("IMG_CONFIRM:")) {
+        const content = text.replace("IMG_CONFIRM:", "");
+        const [imageUrl, userText] = content.split("|");
+
+        msgDiv.innerHTML = `
+            <div class="image-wrapper">
+                <img src="${imageUrl}" class="chat-img" 
+                     onclick="window.open('${imageUrl}', '_blank')"
+                     onerror="this.src='https://via.placeholder.com/150?text=Bild+nicht+gefunden'">
+                ${userText ? `<p class="img-caption">${userText}</p>` : ''}
+            </div>
+        `;
     } else {
         msgDiv.innerText = text;
     }
@@ -26,74 +35,82 @@ function appendMessage(role, text) {
 }
 
 // 2. Echtzeit-Funktion: Prüft auf neue Nachrichten
-async function checkForNewMessages() {
+async function refreshChat() {
     try {
         const response = await fetch('/history');
         if (!response.ok) return;
         const history = await response.json();
 
-        // Nur wenn sich die Anzahl der Nachrichten geändert hat, laden wir neu
-        if (history.length > lastMessageCount) {
-            chatBox.innerHTML = ''; // Box leeren
+        if (history.length !== lastMessageCount) {
+            chatBox.innerHTML = '';
             history.forEach(msg => {
-                const roleClass = msg.role === 'user' ? 'user' : 'bot';
-                appendMessage(roleClass, msg.content);
+                appendMessage(msg.role, msg.content);
             });
             lastMessageCount = history.length;
         }
     } catch (error) {
-        console.error("Polling Fehler:", error);
+        console.error("Fehler beim Abrufen der History:", error);
     }
 }
 
-// 3. Nachricht senden
+// 3. BILD-UPLOAD
+if (uploadBtn && imageInput) {
+    uploadBtn.onclick = () => imageInput.click();
+
+    imageInput.onchange = async () => {
+        const file = imageInput.files[0];
+        if (!file || isProcessing) return;
+
+        isProcessing = true;
+        const message = userInput.value.trim();
+
+        const loadingMsg = document.createElement('div');
+        loadingMsg.className = 'message bot loading';
+        loadingMsg.innerText = '🖼️ Bild wird analysiert...';
+        chatBox.appendChild(loadingMsg);
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('message', message);
+
+        try {
+            const response = await fetch('/upload', { method: 'POST', body: formData });
+            if (!response.ok) throw new Error('Upload fehlgeschlagen');
+            await refreshChat();
+        } catch (error) {
+            appendMessage('bot', 'Fehler: Bild-Analyse fehlgeschlagen.');
+        } finally {
+            if (chatBox.contains(loadingMsg)) chatBox.removeChild(loadingMsg);
+            isProcessing = false;
+            imageInput.value = '';
+        }
+    };
+}
+
+// 4. TEXT-CHAT
 async function sendMessage() {
     const message = userInput.value.trim();
     if (!message || isProcessing) return;
 
     isProcessing = true;
-    sendBtn.disabled = true;
-
-    // Lokale Anzeige vorab (optional, da Polling es ohnehin laden würde)
-    appendMessage('user', message);
     userInput.value = '';
 
-    const loadingDiv = document.createElement('div');
-    loadingDiv.className = 'message bot loading';
-    loadingDiv.innerText = 'KI denkt nach...';
-    chatBox.appendChild(loadingDiv);
-    chatBox.scrollTop = chatBox.scrollHeight;
-
     try {
-        const response = await fetch('/chat', {
+        await fetch('/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: message })
         });
-
-        if (!response.ok) throw new Error('Server-Fehler');
-
-        // Nach dem Senden sofort prüfen, um die KI-Antwort direkt zu sehen
-        await checkForNewMessages();
-
+        await refreshChat();
     } catch (error) {
-        appendMessage('bot', 'Fehler: Verbindung zum Server fehlgeschlagen.');
+        appendMessage('bot', 'Fehler beim Senden.');
     } finally {
-        if (chatBox.contains(loadingDiv)) chatBox.removeChild(loadingDiv);
         isProcessing = false;
-        sendBtn.disabled = false;
-        userInput.focus();
     }
 }
 
-sendBtn.addEventListener('click', sendMessage);
-userInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') sendMessage();
-});
+sendBtn.onclick = sendMessage;
+userInput.onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
 
-// INITIALISIERUNG
-// Beim Starten den Verlauf laden
-window.onload = checkForNewMessages;
-
-// ALLE 3 SEKUNDEN auf neue Nachrichten prüfen (Echtzeit-Effekt)
-setInterval(checkForNewMessages, 3000);
+setInterval(refreshChat, 3000);
+window.onload = refreshChat;
