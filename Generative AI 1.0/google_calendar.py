@@ -52,7 +52,6 @@ def add_event(
     if not service:
         return "Fehler: Kein Kalender-Service verfügbar."
 
-    # Robuste Zeitberechnung (Standard: 60 Minuten, wenn kein end_time gegeben)
     start_dt = datetime.datetime.fromisoformat(start_time.replace("Z", "+00:00"))
     if not end_time:
         end_dt = start_dt + datetime.timedelta(hours=1)
@@ -77,24 +76,34 @@ def add_event(
         return f"Fehler beim Erstellen des Termins: {e}"
 
 
-def find_event_id(summary: str, date_str: str) -> str:
-    """Sucht einen Termin am angegebenen Tag basierend auf dem Titel."""
+def find_event_ids(summary: str, date_str: str = "") -> list:
+    """
+    Sucht Termine basierend auf dem Titel.
+    Wenn date_str leer ist, werden die nächsten 30 Tage durchsucht.
+    Gibt eine Liste aller passenden Event-IDs zurück.
+    """
     service = get_calendar_service()
     if not service:
-        return None
+        return []
 
     try:
-        # Suchzeitraum: Gesamter Tag des angegebenen Datums
-        day_prefix = date_str[:10]
-        start_of_day = day_prefix + "T00:00:00Z"
-        end_of_day = day_prefix + "T23:59:59Z"
+        if date_str:
+            # Suchen an einem spezifischen Tag
+            day_prefix = date_str[:10]
+            time_min = day_prefix + "T00:00:00Z"
+            time_max = day_prefix + "T23:59:59Z"
+        else:
+            # Suchen in den nächsten 30 Tagen (ab jetzt)
+            now = datetime.datetime.utcnow()
+            time_min = now.isoformat() + "Z"
+            time_max = (now + datetime.timedelta(days=30)).isoformat() + "Z"
 
         events_result = (
             service.events()
             .list(
                 calendarId="primary",
-                timeMin=start_of_day,
-                timeMax=end_of_day,
+                timeMin=time_min,
+                timeMax=time_max,
                 singleEvents=True,
                 orderBy="startTime",
             )
@@ -102,49 +111,59 @@ def find_event_id(summary: str, date_str: str) -> str:
         )
 
         events = events_result.get("items", [])
+        found_ids = []
+
         for event in events:
-            # Fallback auf leeren String, falls Termin keinen Titel hat
             event_summary = event.get("summary", "").lower()
             if summary.lower() in event_summary:
-                return event["id"]
-        return None
+                found_ids.append(event["id"])
+
+        return found_ids
     except Exception as e:
         print(f"⚠️ Fehler bei der Terminsuche: {e}")
-        return None
+        return []
 
 
-def delete_event(summary: str, date_str: str) -> str:
-    """Löscht einen Termin basierend auf Titel und Startzeit."""
+def delete_event(summary: str, date_str: str = "") -> str:
+    """Löscht ALLE gefundenen Termine, die das Suchwort enthalten."""
     service = get_calendar_service()
     if not service:
         return "Fehler: Kein Kalender-Service verfügbar."
 
-    event_id = find_event_id(summary, date_str)
+    event_ids = find_event_ids(summary, date_str)
 
-    if event_id:
+    if not event_ids:
+        return f"Fehler: Kein Termin mit dem Stichwort '{summary}' gefunden."
+
+    deleted_count = 0
+    for event_id in event_ids:
         try:
             service.events().delete(calendarId="primary", eventId=event_id).execute()
-            return f"Termin '{summary}' erfolgreich gelöscht."
+            deleted_count += 1
         except Exception as e:
-            return f"Fehler beim Löschen: {e}"
-    return "Fehler: Termin zum Löschen nicht gefunden."
+            print(f"⚠️ Fehler beim Löschen der ID {event_id}: {e}")
+
+    return f"Erfolgreich gelöscht: {deleted_count} Termin(e) mit '{summary}' entfernt."
 
 
 def edit_event(
     old_summary: str,
-    old_date_str: str,
+    old_date_str: str = "",
     new_summary: str = None,
     new_start_time: str = None,
 ) -> str:
-    """Bearbeitet einen bestehenden Termin (Titel und/oder Zeit)."""
+    """Bearbeitet den ERSTEN gefundenen Termin (Titel und/oder Zeit)."""
     service = get_calendar_service()
     if not service:
         return "Fehler: Kein Kalender-Service verfügbar."
 
-    event_id = find_event_id(old_summary, old_date_str)
+    event_ids = find_event_ids(old_summary, old_date_str)
 
-    if not event_id:
-        return "Fehler: Termin zum Bearbeiten nicht gefunden."
+    if not event_ids:
+        return f"Fehler: Kein Termin mit dem Stichwort '{old_summary}' zum Bearbeiten gefunden."
+
+    # Wir bearbeiten nur den ersten Treffer, um Chaos zu vermeiden
+    event_id = event_ids[0]
 
     try:
         # Aktuellen Termin abrufen

@@ -5,7 +5,7 @@ import google_calendar
 def process_calendar_event(text: str) -> None:
     """
     Sucht nach [CALENDAR_EVENT], extrahiert Daten und führt Add/Delete/Edit aus.
-    Ignoriert leere Zeilen und formatiert die Schlüssel-Wert-Paare sicher.
+    Erlaubt das Löschen/Bearbeiten ohne spezifisches Startdatum (sucht dann automatisch).
     """
     print("🔍 Prüfe KI-Antwort auf Kalender-Aktionen...")
     pattern = r"\[CALENDAR_EVENT\](.*?)\[/CALENDAR_EVENT\]"
@@ -26,15 +26,24 @@ def process_calendar_event(text: str) -> None:
                 k, v = line.split(":", 1)
                 data[k.strip().lower()] = v.strip()
 
-            title = data.get("title")
-            start = data.get("start")
+            title = data.get("title", "")
+            start = data.get("start", "")
             action = data.get("action", "add").lower()
 
-            if not title or not start:
-                print("⚠️ Fehler: 'Title' oder 'Start' fehlt im Block.")
+            # --- NEUE VALIDIERUNGS-LOGIK ---
+            if action == "add" and (not title or not start):
+                print(
+                    "⚠️ Fehler: Für 'add' müssen 'Title' und 'Start' zwingend angegeben sein."
+                )
                 continue
 
-            print(f"📅 Aktion: {action.upper()} | Termin: {title} | Zeit: {start}")
+            if action in ["delete", "edit"] and not title:
+                print("⚠️ Fehler: Für 'delete/edit' fehlt das Suchwort im Feld 'Title'.")
+                continue
+
+            print(
+                f"📅 Aktion: {action.upper()} | Suchwort/Titel: '{title}' | Zeit: {start or 'Alle kommenden 30 Tage'}"
+            )
 
             # Aktions-Routing
             if action == "delete":
