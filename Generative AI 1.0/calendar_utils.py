@@ -2,23 +2,18 @@ import re
 import google_calendar
 
 
-def process_calendar_event(text: str) -> None:
-    """
-    Sucht nach [CALENDAR_EVENT], extrahiert Daten und führt Add/Delete/Edit aus.
-    Erlaubt das Löschen/Bearbeiten ohne spezifisches Startdatum (sucht dann automatisch).
-    """
+def process_calendar_event(text: str) -> str:
     print("🔍 Prüfe KI-Antwort auf Kalender-Aktionen...")
     pattern = r"\[CALENDAR_EVENT\](.*?)\[/CALENDAR_EVENT\]"
     matches = re.findall(pattern, text, re.DOTALL)
 
     if not matches:
-        print("ℹ️ Kein [CALENDAR_EVENT] Tag in der Nachricht gefunden.")
-        return
+        return ""
 
+    results = []
     for match in matches:
         try:
             data = {}
-            # Robustes Parsing: Ignoriert leere Zeilen und filtert saubere Key-Value-Paare
             for line in match.strip().split("\n"):
                 line = line.strip()
                 if not line or ":" not in line:
@@ -28,45 +23,53 @@ def process_calendar_event(text: str) -> None:
 
             title = data.get("title", "")
             start = data.get("start", "")
-            action = data.get("action", "add").lower()
+            action = data.get("action", "").lower()
 
-            # --- NEUE VALIDIERUNGS-LOGIK ---
+            if not action and not title and not start:
+                continue
+
+            if not action:
+                action = "add"
+
+            if action == "list":
+                days = 7
+                if title.isdigit():
+                    days = int(title)
+                res = google_calendar.get_upcoming_events(days=days)
+                results.append(f"🔎 {res}")
+                continue
+
             if action == "add" and (not title or not start):
-                print(
-                    "⚠️ Fehler: Für 'add' müssen 'Title' und 'Start' zwingend angegeben sein."
-                )
+                results.append("⚠️ Fehler: Für 'add' fehlen Titel oder Startzeit.")
                 continue
 
             if action in ["delete", "edit"] and not title:
-                print("⚠️ Fehler: Für 'delete/edit' fehlt das Suchwort im Feld 'Title'.")
+                results.append(
+                    "⚠️ Fehler: Für 'delete/edit' fehlt das Suchwort im Titel."
+                )
                 continue
 
-            print(
-                f"📅 Aktion: {action.upper()} | Suchwort/Titel: '{title}' | Zeit: {start or 'Alle kommenden 30 Tage'}"
-            )
-
-            # Aktions-Routing
             if action == "delete":
-                result = google_calendar.delete_event(summary=title, date_str=start)
-                print(f"✅ Google API (Delete): {result}")
-
+                res = google_calendar.delete_event(summary=title, date_str=start)
+                results.append(f"🗑️ {res}")
             elif action == "edit":
                 new_title = data.get("new_title", title)
                 new_start = data.get("new_start", start)
-                result = google_calendar.edit_event(
+                res = google_calendar.edit_event(
                     old_summary=title,
                     old_date_str=start,
                     new_summary=new_title,
                     new_start_time=new_start,
                 )
-                print(f"✅ Google API (Edit): {result}")
-
-            else:  # Standard ist 'add'
+                results.append(f"✏️ {res}")
+            else:
                 desc = data.get("description", "Von Lumina automatisch erstellt.")
-                result = google_calendar.add_event(
+                res = google_calendar.add_event(
                     summary=title, start_time=start, description=desc
                 )
-                print(f"✅ Google API (Add): {result}")
+                results.append(f"✅ {res}")
 
         except Exception as e:
-            print(f"⚠️ Kalender-Fehler in process_calendar_event: {e}")
+            results.append(f"⚠️ Interner Fehler: {e}")
+
+    return "\n".join(results)

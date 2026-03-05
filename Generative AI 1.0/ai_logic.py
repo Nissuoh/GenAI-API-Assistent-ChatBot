@@ -13,8 +13,8 @@ G_KEY = os.getenv("GEMINI_API_KEY")
 OR_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Modelle festlegen
-MODEL_OPENAI = "gpt-5-mini"  # Aktuelles OpenAI-Modell
-MODEL_GEMINI = "gemini-3.0-flash"  # Aktuelles Gemini-Modell
+MODEL_OPENAI = "gpt-5-mini"
+MODEL_GEMINI = "gemini-3.0-flash"
 MODEL_OPENROUTER = "arcee-ai/trinity-large-preview:free"
 
 # Clients initialisieren
@@ -23,9 +23,7 @@ client_gemini = genai.Client(api_key=G_KEY) if G_KEY else None
 
 
 def build_system_instruction() -> str:
-    """Generiert die System-Anweisung dynamisch, damit die Zeit immer aktuell ist."""
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
     memories = get_all_info()
     memory_context = (
         "Fakten über den Nutzer:\n" + "\n".join([f"- {k}: {v}" for k, v in memories])
@@ -34,35 +32,29 @@ def build_system_instruction() -> str:
     )
 
     return (
-        f"Du bist Lumina. Aktuelle Zeit in Frankfurt am Main: {now}. {memory_context} "
-        "DEINE HAUPTAUFGABE: Termine im Google Kalender autonom verwalten. "
-        "REGELN FÜR TERMINE:\n"
-        "1. Frag NIEMALS nach Dauer, Erinnerung oder Format.\n"
-        "2. Du kannst Termine hinzufügen (add), löschen (delete) oder bearbeiten (edit).\n"
-        "3. Bei 'delete' oder 'edit': Wenn der Nutzer kein Datum nennt, lass 'Start' komplett leer! Verwende bei 'Title' nur das Suchwort (z.B. 'COD').\n"
-        "4. Entscheide selbst: Wenn bei 'add' keine Dauer im Text steht, nimm 30 oder 60 Minuten.\n"
-        "5. Erstelle IMMER am Ende deiner Antwort den [CALENDAR_EVENT] Block.\n\n"
-        "FORMAT:\n"
+        f"Du bist Lumina, ein privater KI-Assistent. Aktuelle Zeit in Frankfurt am Main: {now}. {memory_context}\n\n"
+        "VERHALTENSREGELN:\n"
+        "1. Führe natürliche Unterhaltungen ohne ständige Erwähnung deiner Fähigkeiten.\n"
+        "2. FRAGE NIEMALS NACH BESTÄTIGUNG für Kalenderaktionen. Wenn der Nutzer nach Terminen fragt oder einen Termin eintragen will, handle SOFORT.\n\n"
+        "KALENDER-FUNKTIONEN:\n"
+        "Du kannst Termine hinzufügen (add), löschen (delete), bearbeiten (edit) oder abrufen (list).\n"
+        "1. Bei 'list': Verwende bei 'Title' die Anzahl der Tage (z.B. '1' für heute, '7' für diese Woche).\n"
+        "   WICHTIG: Nenne bei 'list' NIEMALS selbst Termine im Text! Schreibe nur einen kurzen Einleitungssatz wie 'Hier sind deine Termine:' – das System hängt die echten Daten automatisch an.\n"
+        "2. Bei 'delete' oder 'edit': Verwende bei 'Title' das Suchwort.\n"
+        "3. Bei 'add': Nimm 30-60 Minuten an, wenn nichts genannt ist.\n"
+        "4. WICHTIG: Erstelle den [CALENDAR_EVENT] Block nur bei echten Aktionen. Lass ungenutzte/leere Felder KOMPLETT weg! Erstelle KEINE Zeilen ohne Wert.\n\n"
+        "BEISPIEL FÜR 'LIST':\n"
         "[CALENDAR_EVENT]\n"
-        "Action: <add | delete | edit>\n"
-        "Title: <Titel oder Suchwort>\n"
-        "Start: <YYYY-MM-DDTHH:MM:SSZ (oder leer bei delete/edit)>\n"
-        "Description: <Zusatzinfo (nur bei add)>\n"
-        "New_Title: <Neuer Titel (nur bei edit)>\n"
-        "New_Start: <Neue Zeit YYYY-MM-DDTHH:MM:SSZ (nur bei edit)>\n"
+        "Action: list\n"
+        "Title: 7\n"
         "[/CALENDAR_EVENT]"
     )
 
 
 def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
-    """
-    KI-Logik mit Fallback-Kaskade: OpenAI -> Gemini -> OpenRouter.
-    Verarbeitet Text und Bild (Multimodal).
-    """
     system_instruction = build_system_instruction()
     history = get_chat_history(limit=10)
 
-    # --- SCHRITT 1: OpenAI (GPT-5 Mini) ---
     if client_openai:
         try:
             if image_bytes:
@@ -74,8 +66,7 @@ def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
                         "content": [
                             {
                                 "type": "text",
-                                "text": message
-                                or "Was siehst du auf diesem Bild? Extrahiere Termine, falls vorhanden.",
+                                "text": message or "Bildanalyse auf Termine.",
                             },
                             {
                                 "type": "image_url",
@@ -100,15 +91,12 @@ def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
                 "content": resp.choices[0].message.content,
                 "source": "OpenAI (GPT-5 Mini)",
             }
-
         except Exception as e:
             print(f"⚠️ OpenAI Fehler, wechsle zu Gemini: {e}")
 
-    # --- SCHRITT 2: Gemini (3.0 Flash) Fallback ---
     if client_gemini:
         try:
-            prompt = f"{system_instruction}\n\nNutzer: {message or 'Bildanalyse auf Termine'}"
-
+            prompt = f"{system_instruction}\n\nNutzer: {message or 'Bildanalyse'}"
             if image_bytes:
                 contents = [
                     types.Content(
@@ -128,11 +116,9 @@ def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
                 model=MODEL_GEMINI, contents=contents
             )
             return {"content": resp.text, "source": "Gemini (3.0 Flash)"}
-
         except Exception as e:
             print(f"⚠️ Gemini Fehler, wechsle zu OpenRouter: {e}")
 
-    # --- SCHRITT 3: OpenRouter (Trinity) - Text-Only Fallback ---
     if OR_KEY and not image_bytes:
         try:
             url = "https://openrouter.ai/api/v1/chat/completions"
@@ -140,13 +126,11 @@ def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
                 "Authorization": f"Bearer {OR_KEY}",
                 "Content-Type": "application/json",
             }
-
             payload_messages = (
                 [{"role": "system", "content": system_instruction}]
                 + history
                 + [{"role": "user", "content": message}]
             )
-
             payload = {
                 "model": MODEL_OPENROUTER,
                 "messages": payload_messages,
@@ -165,7 +149,6 @@ def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
         except Exception as e:
             print(f"❌ OpenRouter Fehler: {e}")
 
-    # --- NOTFALL ---
     return {
         "content": "Entschuldigung, derzeit sind alle KI-Server überlastet oder nicht erreichbar.",
         "source": "System Error",
@@ -173,5 +156,4 @@ def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
 
 
 def fetch_gemini_vision(message: str, image_bytes: bytes) -> dict:
-    """Alias für Abwärtskompatibilität mit main.py und telegram_bot.py."""
     return fetch_llm_response(message, image_bytes)
