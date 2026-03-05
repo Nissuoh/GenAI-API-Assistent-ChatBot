@@ -1,8 +1,9 @@
 import os
-import requests
+import httpx
 import base64
 import datetime
-from openai import OpenAI
+import asyncio
+from openai import AsyncOpenAI
 from google import genai
 from google.genai import types
 from database import get_all_info, get_chat_history
@@ -14,17 +15,17 @@ OR_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Modelle festlegen
 MODEL_OPENAI = "gpt-5-mini"
-MODEL_GEMINI = "gemini-3.0-flash"
+MODEL_GEMINI = "gemini-3.1-flash-lite"
 MODEL_OPENROUTER = "arcee-ai/trinity-large-preview:free"
 
-# Clients initialisieren
-client_openai = OpenAI(api_key=O_KEY) if O_KEY else None
+# Asynchrone Clients initialisieren
+client_openai = AsyncOpenAI(api_key=O_KEY) if O_KEY else None
 client_gemini = genai.Client(api_key=G_KEY) if G_KEY else None
 
 
-def build_system_instruction() -> str:
+async def build_system_instruction() -> str:
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    memories = get_all_info()
+    memories = await get_all_info()
     memory_context = (
         "Fakten über den Nutzer:\n" + "\n".join([f"- {k}: {v}" for k, v in memories])
         if memories
@@ -51,9 +52,9 @@ def build_system_instruction() -> str:
     )
 
 
-def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
-    system_instruction = build_system_instruction()
-    history = get_chat_history(limit=10)
+async def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
+    system_instruction = await build_system_instruction()
+    history = await get_chat_history(limit=30)
 
     if client_openai:
         try:
@@ -84,12 +85,12 @@ def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
                     + [{"role": "user", "content": message}]
                 )
 
-            resp = client_openai.chat.completions.create(
+            resp = await client_openai.chat.completions.create(
                 model=MODEL_OPENAI, messages=messages, timeout=25
             )
             return {
                 "content": resp.choices[0].message.content,
-                "source": "OpenAI (GPT-5 Mini)",
+                "source": "OpenAI (GPT-4o Mini)",
             }
         except Exception as e:
             print(f"⚠️ OpenAI Fehler, wechsle zu Gemini: {e}")
@@ -112,8 +113,11 @@ def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
             else:
                 contents = prompt
 
-            resp = client_gemini.models.generate_content(
-                model=MODEL_GEMINI, contents=contents
+            # Da Google GenAI SDK noch nicht komplett nativ Async ist, wrappen wir den Call sicherheitshalber
+            resp = await asyncio.to_thread(
+                client_gemini.models.generate_content,
+                model=MODEL_GEMINI,
+                contents=contents,
             )
             return {"content": resp.text, "source": "Gemini (3.0 Flash)"}
         except Exception as e:
@@ -137,9 +141,10 @@ def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
                 "reasoning": {"enabled": True},
             }
 
-            resp = requests.post(url, headers=headers, json=payload, timeout=45)
-            resp.raise_for_status()
-            data = resp.json()
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, headers=headers, json=payload, timeout=45)
+                resp.raise_for_status()
+                data = resp.json()
 
             return {
                 "content": data["choices"][0]["message"]["content"],
@@ -155,5 +160,5 @@ def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
     }
 
 
-def fetch_gemini_vision(message: str, image_bytes: bytes) -> dict:
-    return fetch_llm_response(message, image_bytes)
+async def fetch_gemini_vision(message: str, image_bytes: bytes) -> dict:
+    return await fetch_llm_response(message, image_bytes)

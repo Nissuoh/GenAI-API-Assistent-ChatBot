@@ -5,7 +5,7 @@ import time
 import fitz  # PyMuPDF
 import re
 from typing import List, Dict, Any
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -18,7 +18,6 @@ from ai_logic import fetch_llm_response, fetch_gemini_vision
 from calendar_utils import process_calendar_event
 
 load_dotenv()
-init_db()
 
 UPLOAD_DIR = "static/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -49,8 +48,28 @@ def extract_pdf_text(file_bytes: bytes) -> str:
     return "\n".join(page.get_text() for page in doc)
 
 
+async def background_calendar_task(ai_msg: str, message_to_save: str, bot_app=None):
+    """Führt Google API & DB-Speicherung im Hintergrund aus, ohne den Nutzer warten zu lassen."""
+    cal_status = await asyncio.to_thread(process_calendar_event, ai_msg)
+
+    if cal_status:
+        message_to_save += f"\n\n{cal_status}"
+
+        # Nachträgliches Kalender-Update an Telegram senden
+        if bot_app and ALLOWED_ID:
+            try:
+                await bot_app.bot.send_message(
+                    chat_id=ALLOWED_ID, text=f"🗓️ **Update:**\n{cal_status}"
+                )
+            except Exception as e:
+                print(f"⚠️ Background Telegram Error: {e}")
+
+    await save_message("assistant", message_to_save)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_db()
     cleanup_task = asyncio.create_task(cleanup_uploads())
     if tg_app:
         try:
@@ -79,11 +98,15 @@ class ChatRequest(BaseModel):
 
 @app.get("/history")
 async def history() -> List[Dict[str, Any]]:
-    return get_chat_history(limit=50)
+    return await get_chat_history(limit=50)
 
 
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...), message: str = Form("")) -> dict:
+async def upload_file(
+    file: UploadFile = File(...),
+    message: str = Form(""),
+    bg_tasks: BackgroundTasks = BackgroundTasks(),
+) -> dict:
     try:
         file_bytes = await file.read()
         ext = file.filename.split(".")[-1].lower()
@@ -94,28 +117,21 @@ async def upload_file(file: UploadFile = File(...), message: str = Form("")) -> 
             f.write(file_bytes)
 
         file_url = f"/static/uploads/{file_name}"
-        save_message("user", f"FILE_CONFIRM:{file_url}|{message}")
+        await save_message("user", f"FILE_CONFIRM:{file_url}|{message}")
 
         if file.content_type.startswith("image/"):
-            response = await asyncio.to_thread(fetch_gemini_vision, message, file_bytes)
+            response = await fetch_gemini_vision(message, file_bytes)
         elif file.content_type == "application/pdf":
             extracted_text = await asyncio.to_thread(extract_pdf_text, file_bytes)
             full_prompt = f"{message}\n\nDokumentinhalt:\n{extracted_text}"
-            response = await asyncio.to_thread(fetch_llm_response, full_prompt)
+            response = await fetch_llm_response(full_prompt)
         else:
             raise HTTPException(status_code=400, detail="Nicht unterstütztes Format.")
 
         ai_msg = response.get("content", "Keine Antwort erhalten.")
-        cal_status = process_calendar_event(ai_msg)
-
         display_msg = re.sub(
             r"\[CALENDAR_EVENT\].*?\[/CALENDAR_EVENT\]", "", ai_msg, flags=re.DOTALL
         ).strip()
-
-        if cal_status:
-            display_msg += f"\n\n{cal_status}"
-
-        save_message("assistant", display_msg)
 
         if tg_app and ALLOWED_ID:
             try:
@@ -139,6 +155,9 @@ async def upload_file(file: UploadFile = File(...), message: str = Form("")) -> 
             except Exception as tg_err:
                 print(f"⚠️ Telegram Sync Fehler: {tg_err}")
 
+        # Fire and forget Kalender & Speichern im Web-Backend
+        bg_tasks.add_task(background_calendar_task, ai_msg, display_msg, tg_app)
+
         response["content"] = display_msg
         return response
 
@@ -148,22 +167,15 @@ async def upload_file(file: UploadFile = File(...), message: str = Form("")) -> 
 
 
 @app.post("/chat")
-async def chat(request: ChatRequest) -> dict:
+async def chat(request: ChatRequest, bg_tasks: BackgroundTasks) -> dict:
     try:
-        save_message("user", request.message)
-        response = await asyncio.to_thread(fetch_llm_response, request.message)
+        await save_message("user", request.message)
+        response = await fetch_llm_response(request.message)
         ai_msg = response.get("content", "Fehler bei der Antwortgenerierung.")
-
-        cal_status = process_calendar_event(ai_msg)
 
         display_msg = re.sub(
             r"\[CALENDAR_EVENT\].*?\[/CALENDAR_EVENT\]", "", ai_msg, flags=re.DOTALL
         ).strip()
-
-        if cal_status:
-            display_msg += f"\n\n{cal_status}"
-
-        save_message("assistant", display_msg)
 
         if tg_app and ALLOWED_ID:
             try:
@@ -175,6 +187,8 @@ async def chat(request: ChatRequest) -> dict:
                 )
             except Exception as tg_err:
                 print(f"⚠️ Telegram Sync Fehler: {tg_err}")
+
+        bg_tasks.add_task(background_calendar_task, ai_msg, display_msg, tg_app)
 
         response["content"] = display_msg
         return response
