@@ -1,0 +1,13 @@
+// Vollständiges Schema basierend auf Generative AI 1.0
+
+Table user_info {
+  key text [primary key, note: 'Eindeutiger Bezeichner für einen Fakt']
+  value text [note: 'Der gespeicherte Inhalt oder Wert']
+}
+
+Table chat_history {
+  id integer [primary key, increment, note: 'Automatischer Zähler']
+  role text [note: 'Rolle des Sprechers: user, assistant oder bot']
+  content text [note: 'Die eigentliche Nachricht']
+  timestamp timestamp [default: `CURRENT_TIMESTAMP`, note: 'Zeitpunkt der Nachricht']
+}
