@@ -36,18 +36,19 @@ async def build_system_instruction() -> str:
         f"Du bist Lumina, ein privater KI-Assistent. Aktuelle Zeit in Frankfurt am Main: {now}. {memory_context}\n\n"
         "VERHALTENSREGELN:\n"
         "1. Führe natürliche Unterhaltungen ohne ständige Erwähnung deiner Fähigkeiten.\n"
-        "2. FRAGE NIEMALS NACH BESTÄTIGUNG für Kalenderaktionen. Wenn der Nutzer nach Terminen fragt oder einen Termin eintragen will, handle SOFORT.\n\n"
+        "2. FRAGE NIEMALS NACH BESTÄTIGUNG für Kalenderaktionen. Handle SOFORT.\n"
+        "3. KONTEXT-VERSTÄNDNIS & VERKNÜPFUNGEN: Analysiere immer den bisherigen Chatverlauf! Wenn der Nutzer sich auf etwas Vorheriges bezieht (z.B. 'Lösche das vom 21.' oder 'Verschiebe das Meeting'), MUSST du herausfinden, wie der Termin exakt heißt. Nutze NIEMALS nur ein Datum oder Pronomen als 'Title', sondern immer den echten Namen des Termins aus dem Kontext.\n\n"
         "KALENDER-FUNKTIONEN:\n"
         "Du kannst Termine hinzufügen (add), löschen (delete), bearbeiten (edit) oder abrufen (list).\n"
-        "1. Bei 'list': Verwende bei 'Title' die Anzahl der Tage (z.B. '1' für heute, '7' für diese Woche).\n"
-        "   WICHTIG: Nenne bei 'list' NIEMALS selbst Termine im Text! Schreibe nur einen kurzen Einleitungssatz wie 'Hier sind deine Termine:' – das System hängt die echten Daten automatisch an.\n"
-        "2. Bei 'delete' oder 'edit': Verwende bei 'Title' das Suchwort.\n"
+        "1. Bei 'list': Verwende bei 'Title' die Anzahl der Tage (z.B. '1' für heute). Nenne bei 'list' NIEMALS selbst Termine im Text! Schreibe nur einen Einleitungssatz.\n"
+        "2. Bei 'delete' oder 'edit': Verwende bei 'Title' ZWINGEND den echten Namen des Termins (z.B. 'Zahnarzt', 'Meeting'), den du aus dem Chatverlauf extrahiert hast.\n"
         "3. Bei 'add': Nimm 30-60 Minuten an, wenn nichts genannt ist.\n"
-        "4. WICHTIG: Erstelle den [CALENDAR_EVENT] Block nur bei echten Aktionen. Lass ungenutzte/leere Felder KOMPLETT weg! Erstelle KEINE Zeilen ohne Wert.\n\n"
-        "BEISPIEL FÜR 'LIST':\n"
+        "4. WICHTIG: Erstelle den [CALENDAR_EVENT] Block nur bei echten Aktionen. Lass ungenutzte Felder KOMPLETT weg!\n\n"
+        "BEISPIEL FÜR 'DELETE' MIT KONTEXT (Nutzer: 'Lösche das vom 21.', vorheriges Thema war 'Zahnarzt'):\n"
         "[CALENDAR_EVENT]\n"
-        "Action: list\n"
-        "Title: 7\n"
+        "Action: delete\n"
+        "Title: Zahnarzt\n"
+        "Start: 2026-03-21T00:00:00Z\n"
         "[/CALENDAR_EVENT]"
     )
 
@@ -90,7 +91,7 @@ async def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
             )
             return {
                 "content": resp.choices[0].message.content,
-                "source": "OpenAI (GPT-4o Mini)",
+                "source": "OpenAI",
             }
         except Exception as e:
             print(f"⚠️ OpenAI Fehler, wechsle zu Gemini: {e}")
@@ -113,13 +114,12 @@ async def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
             else:
                 contents = prompt
 
-            # Da Google GenAI SDK noch nicht komplett nativ Async ist, wrappen wir den Call sicherheitshalber
             resp = await asyncio.to_thread(
                 client_gemini.models.generate_content,
                 model=MODEL_GEMINI,
                 contents=contents,
             )
-            return {"content": resp.text, "source": "Gemini (3.0 Flash)"}
+            return {"content": resp.text, "source": "Gemini"}
         except Exception as e:
             print(f"⚠️ Gemini Fehler, wechsle zu OpenRouter: {e}")
 
@@ -148,7 +148,7 @@ async def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
 
             return {
                 "content": data["choices"][0]["message"]["content"],
-                "source": "OpenRouter (Trinity)",
+                "source": "OpenRouter",
                 "reasoning": data["choices"][0]["message"].get("reasoning"),
             }
         except Exception as e:
