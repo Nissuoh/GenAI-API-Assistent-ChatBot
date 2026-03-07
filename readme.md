@@ -24,7 +24,7 @@ Ein privater, multimodaler KI-Assistent, der über **Telegram** und ein lokales 
 | **KI-Modelle** | OpenAI, Google Gemini, OpenRouter |
 | **Kalender** | Google Calendar API |
 | **Dokumenten-Analyse**| PyMuPDF (`fitz`) |
-| **Datenbank** | SQLite |
+| **Datenbank** | aiosqlite |
 | **Frontend** | HTML, CSS, Vanilla JS |
 
 ---
