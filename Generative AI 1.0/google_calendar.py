@@ -64,22 +64,29 @@ def add_event(
         return f"Fehler beim Erstellen: {e}"
 
 
-def get_events(days: int = 7) -> str:
-    """Ruft die Termine der nächsten (positiv) oder letzten (negativ) X Tage ab."""
+def get_events(days: int = 7, specific_date: str = None) -> str:
+    """Ruft die Termine eines exakten Datums oder einer Zeitspanne ab."""
     service = get_calendar_service()
     if not service:
         return "Fehler: Kein Kalender-Service verfügbar."
 
     try:
         now = datetime.datetime.utcnow()
-        if days >= 0:
-            time_min = now.isoformat() + "Z"
-            time_max = (now + datetime.timedelta(days=days)).isoformat() + "Z"
-            label = f"nächsten {days}"
+
+        if specific_date:
+            target_date = datetime.datetime.strptime(specific_date, "%Y-%m-%d")
+            time_min = target_date.isoformat() + "Z"
+            time_max = (target_date + datetime.timedelta(days=1)).isoformat() + "Z"
+            label = f"am {specific_date}"
         else:
-            time_max = now.isoformat() + "Z"
-            time_min = (now + datetime.timedelta(days=days)).isoformat() + "Z"
-            label = f"letzten {abs(days)}"
+            if days >= 0:
+                time_min = now.isoformat() + "Z"
+                time_max = (now + datetime.timedelta(days=days)).isoformat() + "Z"
+                label = f"nächsten {days} Tag(e)"
+            else:
+                time_max = now.isoformat() + "Z"
+                time_min = (now + datetime.timedelta(days=days)).isoformat() + "Z"
+                label = f"letzten {abs(days)} Tag(e)"
 
         events_result = (
             service.events()
@@ -95,9 +102,9 @@ def get_events(days: int = 7) -> str:
 
         events = events_result.get("items", [])
         if not events:
-            return f"Keine Termine in den {label} Tag(en) gefunden."
+            return f"Keine Termine {label} gefunden."
 
-        lines = [f"📅 **Termine der {label} Tag(e):**"]
+        lines = [f"📅 **Termine {label}:**"]
         for event in events:
             start = event["start"].get("dateTime", event["start"].get("date"))
             date_part = start[:10]
@@ -117,7 +124,6 @@ def find_event_ids(summary: str, date_str: str = "") -> list:
         return []
 
     try:
-        # 1. Toleranz bei Datum & Zeitzone: Wir suchen großzügiger (+/- 1 Tag)
         if date_str:
             day_prefix = date_str[:10]
             try:
@@ -145,8 +151,6 @@ def find_event_ids(summary: str, date_str: str = "") -> list:
         )
 
         events = events_result.get("items", [])
-
-        # 2. Toleranz bei Schreibweise: Leerzeichen und Sonderzeichen ignorieren
         search_term = re.sub(r"[^a-zA-Z0-9]", "", summary.lower())
 
         found_ids = []
@@ -154,7 +158,6 @@ def find_event_ids(summary: str, date_str: str = "") -> list:
             event_title = event.get("summary", "")
             event_title_clean = re.sub(r"[^a-zA-Z0-9]", "", event_title.lower())
 
-            # Prüfen, ob das gesäuberte Suchwort im gesäuberten Titel steckt
             if search_term and search_term in event_title_clean:
                 found_ids.append(event["id"])
 

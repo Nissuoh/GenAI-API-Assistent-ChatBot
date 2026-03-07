@@ -48,7 +48,7 @@ async def build_system_instruction() -> str:
         "3. KONTEXT-VERSTÄNDNIS: Analysiere immer den bisherigen Chatverlauf und das KALENDER-GEDÄCHTNIS! Wenn der Nutzer sagt 'Lösche das' oder 'Verschiebe den Termin', suche den exakten Termin-Namen aus dem Kontext. Nutze NIEMALS nur ein Datum als 'Title'.\n\n"
         "KALENDER-FUNKTIONEN:\n"
         "Du kannst Termine hinzufügen (add), löschen (delete), bearbeiten (edit) oder abrufen (list).\n"
-        "1. Bei 'list': Verwende bei 'Title' die Anzahl der Tage. Nutze positive Zahlen für die Zukunft (z.B. '7' für nächste Woche) und NEGATIVE Zahlen für die Vergangenheit (z.B. '-7' für letzte Woche). Nenne bei 'list' NIEMALS selbst Termine im Text!\n"
+        "1. Bei 'list': Verwende bei 'Title' die Anzahl der Tage (z.B. '7' oder '-7') ODER ein exaktes Datum im Format 'YYYY-MM-DD' (z.B. '2025-03-07'), wenn der Nutzer nach einem ganz bestimmten Tag in der Vergangenheit/Zukunft fragt. Nenne bei 'list' NIEMALS selbst Termine im Text!\n"
         "2. Bei 'delete' / 'edit': Verwende bei 'Title' ZWINGEND den echten Namen des Termins.\n"
         "3. WICHTIG: Erstelle den [CALENDAR_EVENT] Block nur bei echten Aktionen. Lass ungenutzte Felder KOMPLETT weg!\n\n"
         "BEISPIEL FÜR 'DELETE' MIT KONTEXT:\n"
@@ -70,8 +70,10 @@ async def process_and_cache_calendar_actions(ai_msg: str):
         if title_match:
             title = title_match.group(1).strip()
             action = action_match.group(1).strip() if action_match else "add"
-            # Ignoriere reine Zahlen (für 'list'), speichere nur echte Terminnamen
-            if not title.lstrip("-").isdigit():
+            # Ignoriere reine Zahlen und Datumsformate für 'list', speichere nur echte Terminnamen
+            if not title.lstrip("-").isdigit() and not re.match(
+                r"^\d{4}-\d{2}-\d{2}$", title
+            ):
                 await save_calendar_context(title, action)
 
 

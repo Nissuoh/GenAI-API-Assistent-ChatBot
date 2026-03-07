@@ -32,14 +32,18 @@ def process_calendar_event(text: str) -> str:
                 action = "add"
 
             if action == "list":
-                days = 7
-                try:
-                    days = int(title)
-                except ValueError:
-                    pass
+                title_clean = title.strip()
+                # Prüfen, ob ein exaktes Datum im Format YYYY-MM-DD übergeben wurde
+                if re.match(r"^\d{4}-\d{2}-\d{2}$", title_clean):
+                    res = google_calendar.get_events(specific_date=title_clean)
+                else:
+                    days = 7
+                    try:
+                        days = int(title_clean)
+                    except ValueError:
+                        pass
+                    res = google_calendar.get_events(days=days)
 
-                # Hier wird nun die neue Funktion get_events aufgerufen
-                res = google_calendar.get_events(days=days)
                 results.append(f"🔎 {res}")
                 continue
 
