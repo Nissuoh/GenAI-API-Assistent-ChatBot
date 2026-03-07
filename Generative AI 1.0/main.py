@@ -7,7 +7,7 @@ import re
 from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -204,6 +204,11 @@ async def chat(request: ChatRequest, bg_tasks: BackgroundTasks) -> dict:
     except Exception as e:
         print(f"❌ Fehler im /chat Endpunkt: {e}")
         raise HTTPException(status_code=500, detail=f"Chat-Fehler: {str(e)}")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(content=b"", media_type="image/x-icon")
 
 
 @app.get("/")
