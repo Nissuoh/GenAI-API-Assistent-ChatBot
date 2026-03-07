@@ -1,5 +1,6 @@
 import os.path
 import datetime
+import re
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -63,16 +64,22 @@ def add_event(
         return f"Fehler beim Erstellen: {e}"
 
 
-def get_upcoming_events(days: int = 7) -> str:
-    """Ruft die Termine der nächsten X Tage ab."""
+def get_events(days: int = 7) -> str:
+    """Ruft die Termine der nächsten (positiv) oder letzten (negativ) X Tage ab."""
     service = get_calendar_service()
     if not service:
         return "Fehler: Kein Kalender-Service verfügbar."
 
     try:
         now = datetime.datetime.utcnow()
-        time_min = now.isoformat() + "Z"
-        time_max = (now + datetime.timedelta(days=days)).isoformat() + "Z"
+        if days >= 0:
+            time_min = now.isoformat() + "Z"
+            time_max = (now + datetime.timedelta(days=days)).isoformat() + "Z"
+            label = f"nächsten {days}"
+        else:
+            time_max = now.isoformat() + "Z"
+            time_min = (now + datetime.timedelta(days=days)).isoformat() + "Z"
+            label = f"letzten {abs(days)}"
 
         events_result = (
             service.events()
@@ -88,9 +95,9 @@ def get_upcoming_events(days: int = 7) -> str:
 
         events = events_result.get("items", [])
         if not events:
-            return f"Keine Termine in den nächsten {days} Tag(en) gefunden."
+            return f"Keine Termine in den {label} Tag(en) gefunden."
 
-        lines = [f"📅 **Termine der nächsten {days} Tag(e):**"]
+        lines = [f"📅 **Termine der {label} Tag(e):**"]
         for event in events:
             start = event["start"].get("dateTime", event["start"].get("date"))
             date_part = start[:10]
@@ -110,10 +117,16 @@ def find_event_ids(summary: str, date_str: str = "") -> list:
         return []
 
     try:
+        # 1. Toleranz bei Datum & Zeitzone: Wir suchen großzügiger (+/- 1 Tag)
         if date_str:
             day_prefix = date_str[:10]
-            time_min = day_prefix + "T00:00:00Z"
-            time_max = day_prefix + "T23:59:59Z"
+            try:
+                target_date = datetime.datetime.strptime(day_prefix, "%Y-%m-%d")
+                time_min = (target_date - datetime.timedelta(days=1)).isoformat() + "Z"
+                time_max = (target_date + datetime.timedelta(days=2)).isoformat() + "Z"
+            except:
+                time_min = day_prefix + "T00:00:00Z"
+                time_max = day_prefix + "T23:59:59Z"
         else:
             now = datetime.datetime.utcnow()
             time_min = now.isoformat() + "Z"
@@ -132,13 +145,22 @@ def find_event_ids(summary: str, date_str: str = "") -> list:
         )
 
         events = events_result.get("items", [])
-        found_ids = [
-            event["id"]
-            for event in events
-            if summary.lower() in event.get("summary", "").lower()
-        ]
+
+        # 2. Toleranz bei Schreibweise: Leerzeichen und Sonderzeichen ignorieren
+        search_term = re.sub(r"[^a-zA-Z0-9]", "", summary.lower())
+
+        found_ids = []
+        for event in events:
+            event_title = event.get("summary", "")
+            event_title_clean = re.sub(r"[^a-zA-Z0-9]", "", event_title.lower())
+
+            # Prüfen, ob das gesäuberte Suchwort im gesäuberten Titel steckt
+            if search_term and search_term in event_title_clean:
+                found_ids.append(event["id"])
+
         return found_ids
     except Exception as e:
+        print(f"Such-Fehler: {e}")
         return []
 
 

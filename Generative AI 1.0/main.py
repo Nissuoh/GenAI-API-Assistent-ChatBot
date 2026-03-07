@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 
 from database import init_db, save_message, get_chat_history
 from telegram_bot import setup_telegram
-from ai_logic import fetch_llm_response, fetch_gemini_vision
+from ai_logic import fetch_llm_response, fetch_gemini_vision, update_long_term_memory
 from calendar_utils import process_calendar_event
 
 load_dotenv()
@@ -43,19 +43,26 @@ async def cleanup_uploads():
         await asyncio.sleep(3600)
 
 
+async def memory_loop():
+    """Führt stündlich eine Analyse des Chatverlaufs durch, um das Gedächtnis zu komprimieren."""
+    while True:
+        await asyncio.sleep(3600)  # Alle 60 Minuten
+        try:
+            await update_long_term_memory()
+        except Exception as e:
+            print(f"⚠️ Memory Loop Fehler: {e}")
+
+
 def extract_pdf_text(file_bytes: bytes) -> str:
     doc = fitz.open(stream=file_bytes, filetype="pdf")
     return "\n".join(page.get_text() for page in doc)
 
 
 async def background_calendar_task(ai_msg: str, message_to_save: str, bot_app=None):
-    """Führt Google API & DB-Speicherung im Hintergrund aus, ohne den Nutzer warten zu lassen."""
     cal_status = await asyncio.to_thread(process_calendar_event, ai_msg)
 
     if cal_status:
         message_to_save += f"\n\n{cal_status}"
-
-        # Nachträgliches Kalender-Update an Telegram senden
         if bot_app and ALLOWED_ID:
             try:
                 await bot_app.bot.send_message(
@@ -71,6 +78,8 @@ async def background_calendar_task(ai_msg: str, message_to_save: str, bot_app=No
 async def lifespan(app: FastAPI):
     await init_db()
     cleanup_task = asyncio.create_task(cleanup_uploads())
+    mem_task = asyncio.create_task(memory_loop())
+
     if tg_app:
         try:
             await tg_app.initialize()
@@ -79,8 +88,10 @@ async def lifespan(app: FastAPI):
             print("🚀 System gestartet: Web & Telegram synchron.")
         except Exception as e:
             print(f"⚠️ Fehler beim Starten des Telegram Bots: {e}")
+
     yield
     cleanup_task.cancel()
+    mem_task.cancel()
     if tg_app:
         await tg_app.updater.stop()
         await tg_app.stop()
@@ -155,9 +166,7 @@ async def upload_file(
             except Exception as tg_err:
                 print(f"⚠️ Telegram Sync Fehler: {tg_err}")
 
-        # Fire and forget Kalender & Speichern im Web-Backend
         bg_tasks.add_task(background_calendar_task, ai_msg, display_msg, tg_app)
-
         response["content"] = display_msg
         return response
 
@@ -189,7 +198,6 @@ async def chat(request: ChatRequest, bg_tasks: BackgroundTasks) -> dict:
                 print(f"⚠️ Telegram Sync Fehler: {tg_err}")
 
         bg_tasks.add_task(background_calendar_task, ai_msg, display_msg, tg_app)
-
         response["content"] = display_msg
         return response
 

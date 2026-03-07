@@ -33,9 +33,13 @@ def process_calendar_event(text: str) -> str:
 
             if action == "list":
                 days = 7
-                if title.isdigit():
+                try:
                     days = int(title)
-                res = google_calendar.get_upcoming_events(days=days)
+                except ValueError:
+                    pass
+
+                # Hier wird nun die neue Funktion get_events aufgerufen
+                res = google_calendar.get_events(days=days)
                 results.append(f"🔎 {res}")
                 continue
 

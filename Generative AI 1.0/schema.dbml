@@ -1,13 +1,24 @@
-// Vollständiges Schema basierend auf Generative AI 1.0
+Table users {
+  telegram_id text [primary key, note: 'Sicherheits-Whitelist']
+  name text
+  role text [default: 'user']
+}
 
 Table user_info {
-  key text [primary key, note: 'Eindeutiger Bezeichner für einen Fakt']
-  value text [note: 'Der gespeicherte Inhalt oder Wert']
+  key text [primary key]
+  value text
 }
 
 Table chat_history {
-  id integer [primary key, increment, note: 'Automatischer Zähler']
-  role text [note: 'Rolle des Sprechers: user, assistant oder bot']
-  content text [note: 'Die eigentliche Nachricht']
-  timestamp timestamp [default: `CURRENT_TIMESTAMP`, note: 'Zeitpunkt der Nachricht']
+  id integer [primary key, increment]
+  role text
+  content text
+  timestamp timestamp [default: `CURRENT_TIMESTAMP`]
+}
+
+Table calendar_cache {
+  id integer [primary key, increment]
+  event_name text [note: 'Name des Termins']
+  action text [note: 'Was wurde gemacht? (add, delete, etc.)']
+  timestamp timestamp [default: `CURRENT_TIMESTAMP`]
 }
