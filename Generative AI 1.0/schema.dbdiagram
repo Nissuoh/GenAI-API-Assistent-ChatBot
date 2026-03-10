@@ -5,16 +5,28 @@
   "detailLevel": "All",
   "tablePositions": [
     {
+      "name": "users",
+      "schemaName": "public",
+      "x": 276.3652380741004,
+      "y": -12.000406901041664
+    },
+    {
       "name": "user_info",
       "schemaName": "public",
-      "x": 0,
-      "y": 50
+      "x": 39.273393110795446,
+      "y": 35.81794137665719
     },
     {
       "name": "chat_history",
       "schemaName": "public",
-      "x": 198.13720703125,
-      "y": 50
+      "x": 43.225489760890156,
+      "y": 186.3659483013731
+    },
+    {
+      "name": "calendar_cache",
+      "schemaName": "public",
+      "x": 324.00508626302087,
+      "y": 200.54800692471588
     }
   ],
   "tableGroupCollapseStates": [],
