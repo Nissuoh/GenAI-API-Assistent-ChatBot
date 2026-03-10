@@ -1,13 +1,19 @@
+// users: Dient als Whitelist (Sicherheit), damit nur autorisierte Telegram-IDs mit dem Bot interagieren können.
+
 Table users {
   telegram_id text [primary key, note: 'Sicherheits-Whitelist']
   name text
   role text [default: 'user']
 }
 
+//user_info: Bildet das Langzeitgedächtnis der KI (speichert Fakten als Schlüssel-Wert-Paare).
+
 Table user_info {
   key text [primary key]
   value text
 }
+
+//chat_history: Speichert die letzten Nachrichten, um der KI Kontext für das aktuelle Gespräch zu geben.
 
 Table chat_history {
   id integer [primary key, increment]
@@ -15,6 +21,8 @@ Table chat_history {
   content text
   timestamp timestamp [default: `CURRENT_TIMESTAMP`]
 }
+
+//calendar_cache: Merkt sich den zuletzt bearbeiteten Termin (z. B. "Zahnarzt"), damit Folgebefehle wie "Verschiebe das" funktionieren.
 
 Table calendar_cache {
   id integer [primary key, increment]
