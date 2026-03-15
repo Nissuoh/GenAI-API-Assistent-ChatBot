@@ -4,28 +4,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="description" content="Lumina AI Chat Interface">
-    <meta name="theme-color" content="#2b2b2b">
-    <title>AI Chat Interface - Lumina</title>
+    <title>Lumina AI</title>
     <link rel="stylesheet" href="/frontend/style.css">
 </head>
 
 <body>
     <main class="chat-container">
         <header class="chat-header">
-            <h1>Lumina</h1>
+            <div class="header-title">
+                <span class="status-dot"></span>
+                <h1>Lumina</h1>
+            </div>
+            <button id="theme-toggle" class="icon-btn" aria-label="Dark Mode umschalten">🌗</button>
         </header>
 
-        <div id="chat-box" class="chat-box" aria-live="polite"></div>
+        <section id="chat-box" class="chat-box" role="log" aria-live="polite"></section>
 
-        <div class="input-area">
-            <input type="file" id="file-input" accept="image/*,.pdf" style="display: none;" aria-hidden="true">
-            <button id="upload-btn" type="button" title="Datei hochladen" aria-label="Datei hochladen">📎</button>
-
-            <input type="text" id="user-input" placeholder="Nachricht eingeben..." autocomplete="off"
-                aria-label="Chat Nachricht eingeben">
-            <button id="send-btn" aria-label="Nachricht senden">Senden</button>
-        </div>
+        <footer class="input-area">
+            <input type="file" id="file-input" accept="image/*,.pdf" style="display: none;">
+            <button id="upload-btn" class="icon-btn" title="Datei hochladen">📎</button>
+            <input type="text" id="user-input" placeholder="Nachricht an Lumina..." autocomplete="off">
+            <button id="send-btn">Senden</button>
+        </footer>
     </main>
 
     <script src="/frontend/script.js"></script>
