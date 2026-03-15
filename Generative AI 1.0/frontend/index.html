@@ -9,24 +9,47 @@
 </head>
 
 <body>
-    <main class="chat-container">
-        <header class="chat-header">
+    <div class="app-layout">
+        <header class="main-header">
             <div class="header-title">
                 <span class="status-dot"></span>
                 <h1>Lumina</h1>
             </div>
-            <button id="theme-toggle" class="icon-btn" aria-label="Dark Mode umschalten">🌗</button>
+            <button id="theme-toggle" class="icon-btn" aria-label="Dark Mode">🌗</button>
         </header>
 
-        <section id="chat-box" class="chat-box" role="log" aria-live="polite"></section>
+        <section class="calendar-section">
+            <div class="cal-nav">
+                <button id="cal-prev" class="icon-btn">◀</button>
+                <h3 id="cal-month">Monat</h3>
+                <button id="cal-next" class="icon-btn">▶</button>
+            </div>
+            <div class="cal-weekdays">
+                <span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span>
+            </div>
+            <div id="calendar-grid" class="cal-grid"></div>
+        </section>
 
-        <footer class="input-area">
-            <input type="file" id="file-input" accept="image/*,.pdf" style="display: none;">
-            <button id="upload-btn" class="icon-btn" title="Datei hochladen">📎</button>
-            <input type="text" id="user-input" placeholder="Nachricht an Lumina..." autocomplete="off">
-            <button id="send-btn">Senden</button>
-        </footer>
-    </main>
+        <main class="chat-section">
+            <div id="chat-box" class="chat-box" role="log" aria-live="polite"></div>
+            <footer class="input-area">
+                <input type="file" id="file-input" accept="image/*,.pdf" style="display: none;">
+                <button id="upload-btn" class="icon-btn" title="Datei hochladen">📎</button>
+                <input type="text" id="user-input" placeholder="Nachricht an Lumina..." autocomplete="off">
+                <button id="send-btn">Senden</button>
+            </footer>
+        </main>
+    </div>
+
+    <div id="day-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-date-title">Termine</h3>
+                <button id="close-modal" class="icon-btn">✖</button>
+            </div>
+            <div id="modal-events-list" class="modal-body"></div>
+        </div>
+    </div>
 
     <script src="/frontend/script.js"></script>
 </body>

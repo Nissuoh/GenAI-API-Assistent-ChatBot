@@ -21,7 +21,7 @@ OR_KEY = os.getenv("OPENROUTER_API_KEY")
 
 MODEL_OPENAI = "gpt-5-mini"
 MODEL_GEMINI = "gemini-3.1-flash-lite"
-MODEL_OPENROUTER = "arcee-ai/trinity-large-preview:free"
+MODEL_OPENROUTER = "openrouter/free"
 
 client_openai = AsyncOpenAI(api_key=O_KEY) if O_KEY else None
 client_gemini = genai.Client(api_key=G_KEY) if G_KEY else None
