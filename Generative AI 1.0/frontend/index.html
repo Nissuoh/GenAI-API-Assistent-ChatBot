@@ -13,32 +13,49 @@
         <header class="main-header">
             <div class="header-title">
                 <span class="status-dot"></span>
-                <h1>Lumina</h1>
+                <h1>✨ Lumina</h1>
             </div>
-            <button id="theme-toggle" class="icon-btn" aria-label="Dark Mode">🌗</button>
+            <div class="header-actions">
+                <button id="tts-btn" class="icon-btn" title="Vorlesen">🔊</button>
+                <button id="export-btn" class="icon-btn" title="Chat exportieren">📥</button>
+                <button id="theme-toggle" class="icon-btn" aria-label="Dark Mode">🌗</button>
+            </div>
         </header>
 
-        <section class="calendar-section">
-            <div class="cal-nav">
-                <button id="cal-prev" class="icon-btn">◀</button>
-                <h3 id="cal-month">Monat</h3>
-                <button id="cal-next" class="icon-btn">▶</button>
-            </div>
-            <div class="cal-weekdays">
-                <span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span>
-            </div>
-            <div id="calendar-grid" class="cal-grid"></div>
-        </section>
+        <div class="content-row">
+            <aside class="calendar-section" id="calendar-panel">
+                <div class="cal-nav">
+                    <button id="cal-prev" class="icon-btn">◀</button>
+                    <h3 id="cal-month">Monat</h3>
+                    <button id="cal-next" class="icon-btn">▶</button>
+                    <button id="cal-today" class="cal-today-btn">Heute</button>
+                </div>
+                <div class="cal-weekdays">
+                    <span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span>
+                </div>
+                <div id="calendar-grid" class="cal-grid"></div>
+                <div id="next-event-widget" class="next-event-widget" style="display:none; margin-top: 10px;">
+                    <div class="label">Nächster Termin</div>
+                    <div id="next-event-name" class="event-name"></div>
+                    <div id="next-event-time" class="event-time"></div>
+                </div>
+            </aside>
 
-        <main class="chat-section">
-            <div id="chat-box" class="chat-box" role="log" aria-live="polite"></div>
-            <footer class="input-area">
-                <input type="file" id="file-input" accept="image/*,.pdf" style="display: none;">
-                <button id="upload-btn" class="icon-btn" title="Datei hochladen">📎</button>
-                <input type="text" id="user-input" placeholder="Nachricht an Lumina..." autocomplete="off">
-                <button id="send-btn">Senden</button>
-            </footer>
-        </main>
+            <div class="resize-handle" id="resize-handle"></div>
+
+            <main class="chat-section" id="chat-panel">
+                <div id="chat-box" class="chat-box" role="log" aria-live="polite"></div>
+                <footer class="input-area">
+                    <input type="file" id="file-input" accept="image/*,.pdf" style="display: none;">
+                    <button id="upload-btn" class="icon-btn" title="Datei hochladen (oder hierher ziehen)">📎</button>
+                    <div class="input-wrapper">
+                        <input type="text" id="user-input" placeholder="Nachricht an Lumina..." autocomplete="off">
+                        <div id="cmd-dropdown" class="cmd-dropdown hidden"></div>
+                    </div>
+                    <button id="send-btn">Senden</button>
+                </footer>
+            </main>
+        </div>
     </div>
 
     <div id="day-modal" class="modal hidden">
@@ -50,6 +67,8 @@
             <div id="modal-events-list" class="modal-body"></div>
         </div>
     </div>
+
+    <div id="toast-container" class="toast-container"></div>
 
     <script src="/frontend/script.js"></script>
 </body>
