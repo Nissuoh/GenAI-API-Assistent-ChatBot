@@ -18,8 +18,9 @@ Das System verwaltet eigenständig Ihren Google Kalender, verfügt über ein int
 * 📝 **Intelligenter SAMI-Notizblock (`[NOTE_EVENT]`)**: Automatisierte KI-Klassifizierung trennt lose Gedanken/To-Dos von festen Kalenderterminen und leitet sie in den lokalen, tabs-basierten Notizblock.
 * 🧠 **SAMI Context Engine (Langzeitgedächtnis)**: SQLite-Datenbank im **WAL-Modus** (Write-Ahead Logging) garantiert parallele, sperrfreie Lese- und Schreibvorgänge unter hoher Polling-Last. Merkt sich Vorlieben und Kontexte dauerhaft.
 * 📄 **Multimodale Extraktion & OCR**: Upload von Bildern (Vision) oder PDFs (PyMuPDF) – SAMI extrahiert Termindaten, Absender und Details vollautomatisch und pflegt sie in Ihren Kalender ein.
-* 🎙️ **Native Sprachsteuerung (Web Speech API)**: Integrierter Mikrofon-Button im Web-Interface ermöglicht die intuitive Spracheingabe und Echtzeit-Transkription direkt im Browser.
+* 🎙️ **Native Sprachsteuerung & Audio-Player (Web Speech API & MediaRecorder)**: Integrierter Mikrofon-Button im Web-Interface ermöglicht die intuitive Spracheingabe mit gleichzeitiger Audio-Aufnahme. Aufgenommene Sprachmemos werden als **premium abspielbare Sprachnachrichten** mit edel gestalteten, glassmorphen Audio-Playern direkt im Chat-Verlauf gerendert, mitsamt dem transkribierten Text in Kursivschrift darunter.
 * 🖥️ **Premium Glassmorphic Web-Interface**:
+  * **Ultra-flüssiges Panel-Resizing:** Verzögerungsfreies Ziehen und Verschieben des Trennbalkens zwischen Kalender und Chat zur flexiblen Layout-Größenanpassung (optimiert mit globaler Deaktivierung von Transitions während des Resizing-Vorgangs).
   * **Interactive Selection Highlights:** Aktive Kalendertage leuchten edel auf und bleiben während der Modal-Ansicht markiert.
   * **Erweiterte Tastaturnavigation:** Pfeiltasten (`←` / `→`) für blitzschnellen Monatswechsel, `H`-Taste für Sprung zu "Heute" und `Esc` zum Schließen.
   * Sattes, gestochen scharfes Schriftbild dank optimiertem Hardware-Layer-Antialiasing unter Windows.

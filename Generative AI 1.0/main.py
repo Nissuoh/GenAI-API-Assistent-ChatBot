@@ -218,8 +218,67 @@ async def upload_file(
     return {"content": disp}
 
 
+@app.post("/voice-record")
+async def voice_record(
+    file: UploadFile = File(...),
+    transcript: str = Form(""),
+    bg_tasks: BackgroundTasks = BackgroundTasks(),
+):
+    b = await file.read()
+    ext = "webm"
+    if file.content_type == "audio/wav":
+        ext = "wav"
+    elif file.content_type == "audio/ogg":
+        ext = "ogg"
+    elif file.content_type in ["audio/mp4", "audio/m4a"]:
+        ext = "m4a"
+
+    name = f"voice_{uuid.uuid4()}.{ext}"
+    path = os.path.join(UPLOAD_DIR, name)
+    with open(path, "wb") as f:
+        f.write(b)
+
+    url = f"/static/uploads/{name}"
+    user_msg = transcript.strip()
+
+    await save_message("user", f"VOICE_CONFIRM:{url}|{user_msg}")
+
+    res = await fetch_llm_response(user_msg)
+    ai_msg = res.get("content", "")
+    disp = re.sub(
+        r"\[CALENDAR_EVENT\].*?\[/CALENDAR_EVENT\]", "", ai_msg, flags=re.DOTALL
+    )
+    disp = re.sub(
+        r"\[NOTE_EVENT\].*?\[/NOTE_EVENT\]", "", disp, flags=re.DOTALL
+    ).strip()
+
+    if tg_app and ALLOWED_ID:
+        try:
+            with open(path, "rb") as f_voice:
+                try:
+                    await tg_app.bot.send_voice(
+                        chat_id=ALLOWED_ID,
+                        voice=f_voice,
+                        caption=f"Du (Sprachmemo):\n{user_msg}",
+                    )
+                except Exception:
+                    f_voice.seek(0)
+                    await tg_app.bot.send_document(
+                        chat_id=ALLOWED_ID,
+                        document=f_voice,
+                        caption=f"Du (Sprachmemo):\n{user_msg}",
+                    )
+            await tg_app.bot.send_message(chat_id=ALLOWED_ID, text=f"KI:\n{disp}")
+        except Exception as e:
+            print("Telegram forward voice failed:", e)
+
+    bg_tasks.add_task(background_calendar_task, ai_msg, disp, tg_app)
+    return {"transcript": user_msg, "content": disp, "audio_url": url}
+
+
 class VoiceTextRequest(BaseModel):
     transcript: str
+
 
 
 @app.post("/voice-text")

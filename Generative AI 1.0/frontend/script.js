@@ -269,6 +269,7 @@ function exportChat() {
 resizeHandle.addEventListener('mousedown', (e) => {
     isResizing = true;
     resizeHandle.classList.add('active');
+    document.body.classList.add('resizing');
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
     e.preventDefault();
@@ -279,6 +280,7 @@ document.addEventListener('mousemove', (e) => {
     
     requestAnimationFrame(() => {
         const container = document.querySelector('.content-row');
+        if (!container) return;
         const containerWidth = container.offsetWidth;
         const calendarWidth = e.clientX - container.getBoundingClientRect().left;
         
@@ -288,7 +290,8 @@ document.addEventListener('mousemove', (e) => {
         
         const newCalWidth = Math.max(minCal, Math.min(maxCal, calendarWidth));
         
-        calendarPanel.style.flex = '0 0 ' + newCalWidth + 'px';
+        calendarPanel.style.width = newCalWidth + 'px';
+        calendarPanel.style.flex = 'none';
         chatPanel.style.flex = '1 1 auto';
         chatPanel.style.minWidth = minChat + 'px';
     });
@@ -298,6 +301,7 @@ document.addEventListener('mouseup', () => {
     if (isResizing) {
         isResizing = false;
         resizeHandle.classList.remove('active');
+        document.body.classList.remove('resizing');
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
     }
@@ -475,11 +479,30 @@ function appendMessage(role, text) {
     const d = document.createElement('div');
     d.className = `message ${role === 'assistant' || role === 'bot' ? 'bot' : 'user'}`;
     
-    if (text.startsWith("IMG_CONFIRM:") || text.startsWith("FILE_CONFIRM:")) {
-        const [url, uText] = text.replace(/^(IMG|FILE)_CONFIRM:/, "").split("|");
-        d.innerHTML = text.startsWith("IMG_CONFIRM:") 
-            ? `<img src="${url}" class="chat-img" onclick="window.open('${url}')"><br>${escapeHTML(uText || '')}` 
-            : `📄 <a href="${url}" target="_blank">Dokument</a><br>${escapeHTML(uText || '')}`;
+    if (text.startsWith("IMG_CONFIRM:") || text.startsWith("FILE_CONFIRM:") || text.startsWith("VOICE_CONFIRM:")) {
+        if (text.startsWith("VOICE_CONFIRM:")) {
+            const parts = text.replace(/^VOICE_CONFIRM:/, "").split("|");
+            const url = parts[0];
+            const transcript = parts.slice(1).join("|");
+            
+            d.innerHTML = `
+                <div class="voice-message-container">
+                    <div class="voice-player-row">
+                        <span class="voice-icon">🎤</span>
+                        <audio src="${url}" controls class="voice-audio-player"></audio>
+                    </div>
+                    <div class="voice-transcript">
+                        <span class="transcript-label">Transkript:</span>
+                        <p class="transcript-text">"${escapeHTML(transcript)}"</p>
+                    </div>
+                </div>
+            `;
+        } else {
+            const [url, uText] = text.replace(/^(IMG|FILE)_CONFIRM:/, "").split("|");
+            d.innerHTML = text.startsWith("IMG_CONFIRM:") 
+                ? `<img src="${url}" class="chat-img" onclick="window.open('${url}')"><br>${escapeHTML(uText || '')}` 
+                : `📄 <a href="${url}" target="_blank">Dokument</a><br>${escapeHTML(uText || '')}`;
+        }
     } else {
         d.innerHTML = renderMarkdown(text);
     }
@@ -807,8 +830,11 @@ noteInput.addEventListener('keydown', (e) => {
     }
 });
 
-// --- SPEECH RECOGNITION (Voice Input via Browser Web Speech API & Server /voice-text Endpoint) ---
+// --- SPEECH RECOGNITION & AUDIO RECORDING ---
 let recognition = null;
+let mediaRecorder = null;
+let audioChunks = [];
+let userMediaStream = null;
 let isRecording = false;
 let recordTimerInterval = null;
 let recordSeconds = 0;
@@ -842,8 +868,8 @@ async function toggleSpeechRecognition() {
     }
 
     try {
-        // Request microphone permission first
-        await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Request microphone permission and hold the stream
+        userMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
         console.error('Microphone permission denied:', e);
         showToast('Mikrofon-Zugriff verweigert oder kein Mikrofon gefunden.', 'error');
@@ -851,6 +877,15 @@ async function toggleSpeechRecognition() {
     }
 
     try {
+        // Set up MediaRecorder
+        audioChunks = [];
+        mediaRecorder = new MediaRecorder(userMediaStream);
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                audioChunks.push(event.data);
+            }
+        };
+
         recognition = new SpeechRecognition();
         recognition.lang = 'de-DE';
         recognition.continuous = true;
@@ -876,6 +911,9 @@ async function toggleSpeechRecognition() {
                 recordSeconds++;
                 userInput.placeholder = `Sprachaufnahme läuft... [${formatTime(recordSeconds)}]`;
             }, 1000);
+            
+            // Start MediaRecorder
+            mediaRecorder.start();
         };
 
         recognition.onresult = (event) => {
@@ -900,6 +938,16 @@ async function toggleSpeechRecognition() {
                 recordTimerInterval = null;
             }
 
+            // Stop media recorder
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+            
+            // Stop tracks to release mic hardware
+            if (userMediaStream) {
+                userMediaStream.getTracks().forEach(track => track.stop());
+            }
+
             // Reset UI
             if (micBtnEl) {
                 micBtnEl.classList.remove('recording');
@@ -915,36 +963,40 @@ async function toggleSpeechRecognition() {
                 return;
             }
 
-            // Send transcribed text to server-side voice-text endpoint
-            isProcessing = true;
-            appendTypingIndicator();
+            // Set up MediaRecorder onstop callback to handle uploading once chunks are assembled
+            mediaRecorder.onstop = async () => {
+                isProcessing = true;
+                appendTypingIndicator();
 
-            try {
-                const res = await fetch('/voice-text', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ transcript: textToSend })
-                });
+                try {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const fd = new FormData();
+                    fd.append('file', audioBlob, 'voice.webm');
+                    fd.append('transcript', textToSend);
 
-                if (res.ok) {
-                    showToast('Sprachnachricht erfolgreich gesendet', 'success');
-                    await refreshChat();
-                } else {
-                    const errData = await res.json().catch(() => ({}));
-                    showToast(errData.detail || 'Fehler bei der Sprachverarbeitung', 'error');
+                    const res = await fetch('/voice-record', {
+                        method: 'POST',
+                        body: fd
+                    });
+
+                    if (res.ok) {
+                        showToast('Sprachnachricht erfolgreich gesendet', 'success');
+                        await refreshChat();
+                    } else {
+                        const errData = await res.json().catch(() => ({}));
+                        showToast(errData.detail || 'Fehler bei der Sprachverarbeitung', 'error');
+                    }
+                } catch (e) {
+                    console.error('Upload error:', e);
+                    showToast('Upload-Fehler bei der Sprachnachricht', 'error');
+                } finally {
+                    removeTypingIndicator();
+                    isProcessing = false;
+                    loadCalendar();
+                    loadNotes();
+                    chatBox.scrollTop = chatBox.scrollHeight;
                 }
-            } catch (e) {
-                console.error('Upload error:', e);
-                showToast('Upload-Fehler bei der Sprachnachricht', 'error');
-            } finally {
-                removeTypingIndicator();
-                isProcessing = false;
-                loadCalendar();
-                loadNotes();
-                chatBox.scrollTop = chatBox.scrollHeight;
-            }
+            };
         };
 
         recognition.start();
