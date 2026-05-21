@@ -198,7 +198,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         user_msg = await transcribe_audio(bytes(audio_bytes), filename="voice.ogg")
 
         if not user_msg:
-            await update.message.reply_text("⚠️ Sprachmemo konnte nicht transkribiert werden oder war leer.")
+            await update.message.reply_text(
+                "🎤 **Sprachmemo konnte nicht verarbeitet werden.**\n\n"
+                "Bitte stelle sicher, dass ein gültiger `GEMINI_API_KEY` oder `OPENAI_API_KEY` in der `.env`-Datei auf dem Server konfiguriert ist, da die serverbasierte Transkription diese benötigt."
+            )
             return
 
         # Dem Nutzer das Transkript zur Rückmeldung senden

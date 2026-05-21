@@ -218,6 +218,39 @@ async def upload_file(
     return {"content": disp}
 
 
+class VoiceTextRequest(BaseModel):
+    transcript: str
+
+
+@app.post("/voice-text")
+async def voice_text(req: VoiceTextRequest, bg_tasks: BackgroundTasks = BackgroundTasks()):
+    user_msg = req.transcript.strip()
+    if not user_msg:
+        raise HTTPException(400, "Transkript darf nicht leer sein.")
+        
+    await save_message("user", f"[Sprachmemo] {user_msg}")
+    res = await fetch_llm_response(user_msg)
+    ai_msg = res.get("content", "")
+    disp = re.sub(
+        r"\[CALENDAR_EVENT\].*?\[/CALENDAR_EVENT\]", "", ai_msg, flags=re.DOTALL
+    )
+    disp = re.sub(
+        r"\[NOTE_EVENT\].*?\[/NOTE_EVENT\]", "", disp, flags=re.DOTALL
+    ).strip()
+    
+    if tg_app and ALLOWED_ID:
+        try:
+            await tg_app.bot.send_message(
+                chat_id=ALLOWED_ID, text=f"Du (Sprachmemo):\n{user_msg}"
+            )
+            await tg_app.bot.send_message(chat_id=ALLOWED_ID, text=f"KI:\n{disp}")
+        except:
+            pass
+            
+    bg_tasks.add_task(background_calendar_task, ai_msg, disp, tg_app)
+    return {"transcript": user_msg, "content": disp}
+
+
 @app.post("/voice")
 async def voice(file: UploadFile = File(...), bg_tasks: BackgroundTasks = BackgroundTasks()):
     audio_bytes = await file.read()

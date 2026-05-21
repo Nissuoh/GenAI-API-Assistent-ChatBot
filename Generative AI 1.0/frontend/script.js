@@ -807,122 +807,151 @@ noteInput.addEventListener('keydown', (e) => {
     }
 });
 
-// --- SPEECH RECOGNITION (Voice Input via MediaRecorder & Server Transcription) ---
-let mediaRecorder = null;
-let audioChunks = [];
-let voiceStream = null;
+// --- SPEECH RECOGNITION (Voice Input via Browser Web Speech API & Server /voice-text Endpoint) ---
+let recognition = null;
 let isRecording = false;
+let recordTimerInterval = null;
+let recordSeconds = 0;
+
+function formatTime(sec) {
+    const m = Math.floor(sec / 60).toString().padStart(2, '0');
+    const s = (sec % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+}
 
 async function toggleSpeechRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        showToast('Spracherkennung in diesem Browser nicht unterstützt. Bitte nutze Chrome, Edge oder Safari.', 'error');
+        return;
+    }
+
+    const micBtnEl = document.getElementById('mic-btn');
+
     if (isRecording) {
         // Stop recording
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-            mediaRecorder.stop();
+        if (recognition) {
+            recognition.stop();
         }
-    } else {
-        // Prevent double recording or action collision
-        if (isProcessing) {
-            showToast('Bitte warte, bis die aktuelle Anfrage fertig ist.', 'info');
-            return;
-        }
+        return;
+    }
 
-        // Start recording
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            showToast('Mikrofon-Aufnahme in diesem Browser nicht unterstützt', 'error');
-            return;
-        }
+    if (isProcessing) {
+        showToast('Bitte warte, bis die aktuelle Anfrage fertig ist.', 'info');
+        return;
+    }
 
-        try {
-            voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            audioChunks = [];
+    try {
+        // Request microphone permission first
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+        console.error('Microphone permission denied:', e);
+        showToast('Mikrofon-Zugriff verweigert oder kein Mikrofon gefunden.', 'error');
+        return;
+    }
 
-            // Detect best supported mimeType
-            let options = {};
-            if (MediaRecorder.isTypeSupported('audio/webm')) {
-                options = { mimeType: 'audio/webm' };
-            } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
-                options = { mimeType: 'audio/ogg' };
-            }
+    try {
+        recognition = new SpeechRecognition();
+        recognition.lang = 'de-DE';
+        recognition.continuous = true;
+        recognition.interimResults = false;
 
-            mediaRecorder = new MediaRecorder(voiceStream, options);
+        let accumulatedTranscript = '';
 
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data && event.data.size > 0) {
-                    audioChunks.push(event.data);
-                }
-            };
-
-            mediaRecorder.onstop = async () => {
-                // Stop all tracks to turn off mic light immediately
-                if (voiceStream) {
-                    voiceStream.getTracks().forEach(track => track.stop());
-                }
-
-                // Reset UI
-                const micBtnEl = document.getElementById('mic-btn');
-                if (micBtnEl) {
-                    micBtnEl.classList.remove('recording');
-                    micBtnEl.title = "Sprachnachricht aufnehmen";
-                }
-                userInput.placeholder = "Nachricht an Lumina...";
-                userInput.disabled = false;
-                isRecording = false;
-
-                const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-                if (audioBlob.size === 0) {
-                    showToast('Aufnahme war leer', 'error');
-                    return;
-                }
-
-                // Show processing / typing indicator
-                isProcessing = true;
-                appendTypingIndicator();
-
-                try {
-                    const fd = new FormData();
-                    const ext = mediaRecorder.mimeType && mediaRecorder.mimeType.includes('ogg') ? 'ogg' : 'webm';
-                    fd.append('file', audioBlob, `voice.${ext}`);
-
-                    const res = await fetch('/voice', {
-                        method: 'POST',
-                        body: fd
-                    });
-
-                    if (res.ok) {
-                        const data = await res.json();
-                        showToast('Sprachnachricht erfolgreich gesendet', 'success');
-                        await refreshChat();
-                    } else {
-                        showToast('Fehler bei der Sprachverarbeitung', 'error');
-                    }
-                } catch (e) {
-                    console.error('Upload error:', e);
-                    showToast('Upload-Fehler bei der Sprachnachricht', 'error');
-                } finally {
-                    removeTypingIndicator();
-                    isProcessing = false;
-                    loadCalendar();
-                    loadNotes();
-                    chatBox.scrollTop = chatBox.scrollHeight;
-                }
-            };
-
-            mediaRecorder.start();
+        recognition.onstart = () => {
             isRecording = true;
+            recordSeconds = 0;
+            userInput.placeholder = `Sprachaufnahme läuft... [00:00]`;
+            userInput.disabled = true;
 
-            const micBtnEl = document.getElementById('mic-btn');
             if (micBtnEl) {
                 micBtnEl.classList.add('recording');
                 micBtnEl.title = "Aufnahme stoppen und senden";
             }
-            userInput.placeholder = "Aufnahme läuft... (Klicken zum Senden)";
-            userInput.disabled = true;
+
             showToast('Sprachnotiz-Aufnahme gestartet...', 'info');
 
-        } catch (e) {
-            console.error('Error starting MediaRecorder:', e);
-            showToast('Mikrofon-Zugriff verweigert oder Fehler bei Aufnahme-Start', 'error');
-        }
+            // Start timer
+            recordTimerInterval = setInterval(() => {
+                recordSeconds++;
+                userInput.placeholder = `Sprachaufnahme läuft... [${formatTime(recordSeconds)}]`;
+            }, 1000);
+        };
+
+        recognition.onresult = (event) => {
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    accumulatedTranscript += event.results[i][0].transcript + ' ';
+                }
+            }
+        };
+
+        recognition.onerror = (event) => {
+            console.error('Speech recognition error:', event.error);
+            if (event.error !== 'no-speech') {
+                showToast(`Fehler bei der Spracherkennung: ${event.error}`, 'error');
+            }
+        };
+
+        recognition.onend = async () => {
+            // Clean up timer
+            if (recordTimerInterval) {
+                clearInterval(recordTimerInterval);
+                recordTimerInterval = null;
+            }
+
+            // Reset UI
+            if (micBtnEl) {
+                micBtnEl.classList.remove('recording');
+                micBtnEl.title = "Sprachnachricht aufnehmen";
+            }
+            userInput.placeholder = "Nachricht an Lumina...";
+            userInput.disabled = false;
+            isRecording = false;
+
+            const textToSend = accumulatedTranscript.trim();
+            if (!textToSend) {
+                showToast('Keine Sprache erkannt oder Aufnahme leer.', 'warning');
+                return;
+            }
+
+            // Send transcribed text to server-side voice-text endpoint
+            isProcessing = true;
+            appendTypingIndicator();
+
+            try {
+                const res = await fetch('/voice-text', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ transcript: textToSend })
+                });
+
+                if (res.ok) {
+                    showToast('Sprachnachricht erfolgreich gesendet', 'success');
+                    await refreshChat();
+                } else {
+                    const errData = await res.json().catch(() => ({}));
+                    showToast(errData.detail || 'Fehler bei der Sprachverarbeitung', 'error');
+                }
+            } catch (e) {
+                console.error('Upload error:', e);
+                showToast('Upload-Fehler bei der Sprachnachricht', 'error');
+            } finally {
+                removeTypingIndicator();
+                isProcessing = false;
+                loadCalendar();
+                loadNotes();
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+        };
+
+        recognition.start();
+
+    } catch (e) {
+        console.error('Error starting SpeechRecognition:', e);
+        showToast('Fehler beim Starten der Sprachaufnahme', 'error');
     }
 }
 
