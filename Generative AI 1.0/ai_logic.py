@@ -258,3 +258,53 @@ async def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
 
 async def fetch_gemini_vision(message: str, image_bytes: bytes) -> dict:
     return await fetch_llm_response(message, image_bytes)
+
+
+async def transcribe_audio(audio_bytes: bytes) -> str:
+    """
+    Transkribiert ogg/opus Audiodaten in Text.
+    Nutzt primär OpenAI Whisper, sekundär Google Gemini als Fallback.
+    """
+    import io
+    
+    # 1. Versuch mit OpenAI Whisper (falls konfiguriert)
+    if client_openai:
+        try:
+            print("🎙️ Transkribiere mit OpenAI Whisper...")
+            buffer = io.BytesIO(audio_bytes)
+            buffer.name = "voice.ogg"  # Whisper benötigt eine Dateiendung
+            resp = await client_openai.audio.transcriptions.create(
+                model="whisper-1",
+                file=buffer,
+            )
+            transcript = resp.text.strip()
+            if transcript:
+                print(f"✅ Whisper Transkription erfolgreich: {transcript}")
+                return transcript
+        except Exception as e:
+            print(f"⚠️ OpenAI Whisper Fehler: {e}")
+
+    # 2. Fallback mit Google Gemini (falls konfiguriert)
+    if client_gemini:
+        try:
+            print("🎙️ Transkribiere mit Google Gemini...")
+            prompt = "Transkribiere das Audio. Gib AUSSCHLIESSLICH das Transkript zurück, ohne Kommentare oder Zusätze."
+            
+            resp = await asyncio.to_thread(
+                client_gemini.models.generate_content,
+                model=MODEL_GEMINI,
+                contents=[
+                    types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg"),
+                    prompt
+                ]
+            )
+            transcript = resp.text.strip()
+            if transcript:
+                print(f"✅ Gemini Transkription erfolgreich: {transcript}")
+                return transcript
+        except Exception as e:
+            print(f"⚠️ Gemini Transkription Fehler: {e}")
+
+    print("❌ Keine Transkriptions-Engine konnte das Audio verarbeiten.")
+    return ""
+

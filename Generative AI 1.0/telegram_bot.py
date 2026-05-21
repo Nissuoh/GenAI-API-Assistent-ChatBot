@@ -14,7 +14,7 @@ from telegram.ext import (
 from database import save_message
 from calendar_utils import process_calendar_event
 from notepad_utils import process_notepad_event
-from ai_logic import fetch_llm_response, fetch_gemini_vision
+from ai_logic import fetch_llm_response, fetch_gemini_vision, transcribe_audio
 
 ALLOWED_ID = os.getenv("ALLOWED_TELEGRAM_ID")
 
@@ -181,6 +181,57 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
 
 
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await is_allowed(update):
+        await update.message.reply_text("⛔ Zugriff verweigert.")
+        return
+
+    try:
+        await context.bot.send_chat_action(
+            chat_id=update.effective_chat.id, action="typing"
+        )
+
+        voice_file = await update.message.voice.get_file()
+        audio_bytes = await voice_file.download_as_bytearray()
+
+        # Transkribieren
+        user_msg = await transcribe_audio(bytes(audio_bytes))
+
+        if not user_msg:
+            await update.message.reply_text("⚠️ Sprachmemo konnte nicht transkribiert werden oder war leer.")
+            return
+
+        # Dem Nutzer das Transkript zur Rückmeldung senden
+        await update.message.reply_text(f"🎤 **Transkript:** \"{user_msg}\"")
+
+        await save_message("user", f"[Sprachmemo] {user_msg}")
+
+        # Identisch zu handle_message verarbeiten
+        response = await fetch_llm_response(user_msg)
+        ai_msg = response.get("content", "Fehler bei der KI-Generierung.")
+
+        display_msg = re.sub(
+            r"\[CALENDAR_EVENT\].*?\[/CALENDAR_EVENT\]", "", ai_msg, flags=re.DOTALL
+        )
+        display_msg = re.sub(
+            r"\[NOTE_EVENT\].*?\[/NOTE_EVENT\]", "", display_msg, flags=re.DOTALL
+        ).strip()
+
+        await update.message.reply_text(display_msg)
+
+        asyncio.create_task(
+            background_calendar_task_tg(
+                ai_msg, display_msg, context.bot, update.effective_chat.id
+            )
+        )
+
+    except Exception as e:
+        print(f"❌ Fehler in handle_voice: {e}")
+        await update.message.reply_text(
+            "⚠️ Entschuldigung, das Sprachmemo konnte nicht verarbeitet werden."
+        )
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await is_allowed(update):
         await update.message.reply_text("⛔ Zugriff verweigert.")
@@ -219,5 +270,6 @@ def setup_telegram(token: str):
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
     return app
