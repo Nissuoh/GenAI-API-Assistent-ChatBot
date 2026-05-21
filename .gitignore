@@ -1,0 +1,46 @@
+# API-Schlüssel, Tokens und lokale Zugangsdaten
+.env
+**/.env
+credentials.json
+**/credentials.json
+token.json
+**/token.json
+
+# Lokale Datenbanken und SQLite-Speicher
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3
+**/*.db
+**/*.sqlite3
+assistant_memory.db
+
+# Uploads und temporäre Anwenderdateien
+**/static/uploads/
+**/frontend/uploads/
+**/uploads/
+
+# Python Cache, Bytecode und virtuelle Umgebungen
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+**/*.py[cod]
+**/*$py.class
+.venv/
+venv/
+env/
+**/.venv/
+**/venv/
+**/env/
+
+# IDEs, Editoren und Betriebssystem-Metadaten
+.vscode/
+.idea/
+**/.vscode/
+**/.idea/
+.DS_Store
+Thumbs.db
+**/Thumbs.db
+**/.DS_Store

@@ -1,3 +1,11 @@
+import sys
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
+
 import os
 import asyncio
 import uuid
@@ -12,10 +20,11 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
-from database import init_db, save_message, get_chat_history
+from database import init_db, save_message, get_chat_history, get_all_notes, add_note, delete_note
 from telegram_bot import setup_telegram
 from ai_logic import fetch_llm_response, fetch_gemini_vision, update_long_term_memory
 from calendar_utils import process_calendar_event
+from notepad_utils import process_notepad_event
 import google_calendar
 
 load_dotenv()
@@ -71,6 +80,18 @@ async def background_calendar_task(ai_msg: str, msg_save: str, bot_app=None):
                 )
             except:
                 pass
+
+    note_status = await process_notepad_event(ai_msg)
+    if note_status:
+        msg_save += f"\n\n{note_status}"
+        if bot_app and ALLOWED_ID:
+            try:
+                await bot_app.bot.send_message(
+                    chat_id=ALLOWED_ID, text=f"📝 **Update:**\n{note_status}"
+                )
+            except:
+                pass
+
     await save_message("assistant", msg_save)
 
 
@@ -92,6 +113,11 @@ async def lifespan(app: FastAPI):
     if tg_app:
         await tg_app.updater.stop()
         await tg_app.stop()
+    try:
+        from ai_logic import close_http_client
+        await close_http_client()
+    except:
+        pass
 
 
 app = FastAPI(lifespan=lifespan)
@@ -112,6 +138,32 @@ async def history():
 async def calendar_data(year: Optional[int] = None, month: Optional[int] = None):
     events = await asyncio.to_thread(google_calendar.get_events_json, year, month)
     return {"events": events}
+
+
+class NoteRequest(BaseModel):
+    content: str
+
+
+@app.get("/notes")
+async def get_notes():
+    notes = await get_all_notes()
+    return {"notes": notes}
+
+
+@app.post("/notes")
+async def create_note(req: NoteRequest):
+    note_id = await add_note(req.content)
+    if note_id != -1:
+        return {"id": note_id, "content": req.content}
+    raise HTTPException(500, "Fehler beim Hinzufügen der Notiz.")
+
+
+@app.delete("/notes/{note_id}")
+async def remove_note(note_id: int):
+    success = await delete_note(note_id)
+    if success:
+        return {"success": True}
+    raise HTTPException(404, "Notiz nicht gefunden.")
 
 
 @app.post("/upload")
@@ -142,6 +194,9 @@ async def upload_file(
     ai_msg = res.get("content", "")
     disp = re.sub(
         r"\[CALENDAR_EVENT\].*?\[/CALENDAR_EVENT\]", "", ai_msg, flags=re.DOTALL
+    )
+    disp = re.sub(
+        r"\[NOTE_EVENT\].*?\[/NOTE_EVENT\]", "", disp, flags=re.DOTALL
     ).strip()
 
     if tg_app and ALLOWED_ID:
@@ -170,6 +225,9 @@ async def chat(req: ChatRequest, bg_tasks: BackgroundTasks):
     ai_msg = res.get("content", "")
     disp = re.sub(
         r"\[CALENDAR_EVENT\].*?\[/CALENDAR_EVENT\]", "", ai_msg, flags=re.DOTALL
+    )
+    disp = re.sub(
+        r"\[NOTE_EVENT\].*?\[/NOTE_EVENT\]", "", disp, flags=re.DOTALL
     ).strip()
 
     if tg_app and ALLOWED_ID:

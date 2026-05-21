@@ -13,6 +13,7 @@ from telegram.ext import (
 
 from database import save_message
 from calendar_utils import process_calendar_event
+from notepad_utils import process_notepad_event
 from ai_logic import fetch_llm_response, fetch_gemini_vision
 
 ALLOWED_ID = os.getenv("ALLOWED_TELEGRAM_ID")
@@ -37,7 +38,15 @@ async def background_calendar_task_tg(ai_msg: str, display_msg: str, bot, chat_i
         try:
             await bot.send_message(chat_id=chat_id, text=f"🗓️ **Update:**\n{cal_status}")
         except Exception as e:
-            print(f"⚠️ Background Telegram Error: {e}")
+            print(f"⚠️ Background Telegram Error (Calendar): {e}")
+
+    note_status = await process_notepad_event(ai_msg)
+    if note_status:
+        display_msg += f"\n\n{note_status}"
+        try:
+            await bot.send_message(chat_id=chat_id, text=f"📝 **Update:**\n{note_status}")
+        except Exception as e:
+            print(f"⚠️ Background Telegram Error (Notepad): {e}")
 
     await save_message("assistant", display_msg)
 
@@ -64,6 +73,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         display_msg = re.sub(
             r"\[CALENDAR_EVENT\].*?\[/CALENDAR_EVENT\]", "", ai_msg, flags=re.DOTALL
+        )
+        display_msg = re.sub(
+            r"\[NOTE_EVENT\].*?\[/NOTE_EVENT\]", "", display_msg, flags=re.DOTALL
         ).strip()
 
         # Nutzer bekommt SOFORT die Antwort
@@ -100,6 +112,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         display_msg = re.sub(
             r"\[CALENDAR_EVENT\].*?\[/CALENDAR_EVENT\]", "", ai_msg, flags=re.DOTALL
+        )
+        display_msg = re.sub(
+            r"\[NOTE_EVENT\].*?\[/NOTE_EVENT\]", "", display_msg, flags=re.DOTALL
         ).strip()
 
         await update.message.reply_text(display_msg)
@@ -145,6 +160,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         display_msg = re.sub(
             r"\[CALENDAR_EVENT\].*?\[/CALENDAR_EVENT\]", "", ai_msg, flags=re.DOTALL
+        )
+        display_msg = re.sub(
+            r"\[NOTE_EVENT\].*?\[/NOTE_EVENT\]", "", display_msg, flags=re.DOTALL
         ).strip()
 
         await update.message.reply_text(display_msg)
@@ -163,6 +181,33 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
 
 
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await is_allowed(update):
+        await update.message.reply_text("⛔ Zugriff verweigert.")
+        return
+
+    welcome_text = (
+        "✨ **Willkommen bei Lumina AI!** ✨\n\n"
+        "Ich bin dein privater, intelligenter Assistent. Du kannst direkt mit mir chatten, "
+        "um deinen Google Kalender und deinen Notizblock zu verwalten oder Fragen zu beantworten.\n\n"
+        "📅 **Kalenderaktionen:**\n"
+        "• *'Trage morgen um 14 Uhr Zahnarzt ein'*\n"
+        "• *'Was steht diese Woche an?'*\n"
+        "• *'Verschiebe den Zahnarzt auf nächste Woche'*\n"
+        "• *'Lösche das Meeting morgen'*\n\n"
+        "📝 **Notizblock:**\n"
+        "• *'Erinnere mich daran, Milch zu kaufen'*\n"
+        "• *'Notiere die Geschenkideen für Mama'*\n"
+        "• *'Zeig mir meine Notizen'*\n"
+        "• *'Lösche Notiz 3'*\n\n"
+        "📄 **Dokumente & Bilder:**\n"
+        "• Sende mir ein PDF-Dokument, um Informationen oder Termine daraus zu extrahieren.\n"
+        "• Sende mir ein Bild, um es analysieren zu lassen.\n\n"
+        "Wie kann ich dir heute helfen?"
+    )
+    await update.message.reply_text(welcome_text, parse_mode="Markdown")
+
+
 def setup_telegram(token: str):
     if not token:
         print("⚠️ Kein Telegram Token gefunden! Bot wird nicht gestartet.")
@@ -170,7 +215,7 @@ def setup_telegram(token: str):
 
     app = ApplicationBuilder().token(token).build()
 
-    app.add_handler(CommandHandler("start", handle_message))
+    app.add_handler(CommandHandler("start", start_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))

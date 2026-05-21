@@ -1,6 +1,14 @@
+import sys
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
+
 import aiosqlite
 import os
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Any
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "assistant_memory.db")
@@ -9,6 +17,8 @@ DB_PATH = os.path.join(BASE_DIR, "assistant_memory.db")
 async def init_db() -> None:
     try:
         async with aiosqlite.connect(DB_PATH) as conn:
+            await conn.execute("PRAGMA journal_mode=WAL;")
+            await conn.execute("PRAGMA synchronous=NORMAL;")
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS users (
@@ -43,6 +53,15 @@ async def init_db() -> None:
                     event_name TEXT,
                     action TEXT,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """
+            )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS notes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    content TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """
             )
@@ -121,10 +140,61 @@ async def get_latest_calendar_context() -> str:
                 rows = await cursor.fetchall()
         if not rows:
             return "Kein letzter Kalender-Kontext."
-        context_str = ", ".join([f"'{r[0]}' ({r[1]})" for r in rows])
+        
+        # Duplikate filtern, Reihenfolge beibehalten (neueste zuerst)
+        seen = set()
+        unique_rows = []
+        for r in rows:
+            event_name = r[0]
+            action = r[1]
+            if event_name not in seen:
+                seen.add(event_name)
+                unique_rows.append(f"'{event_name}' ({action})")
+                
+        context_str = ", ".join(unique_rows)
         return f"Zuletzt bearbeitete Termine im Kalender: {context_str}"
     except Exception as e:
         return ""
+
+
+async def add_note(content: str) -> int:
+    try:
+        async with aiosqlite.connect(DB_PATH) as conn:
+            cursor = await conn.execute(
+                "INSERT INTO notes (content) VALUES (?)",
+                (content,)
+            )
+            await conn.commit()
+            return cursor.lastrowid
+    except Exception as e:
+        print(f"⚠️ Fehler beim Speichern der Notiz: {e}")
+        return -1
+
+
+async def delete_note(note_id: int) -> bool:
+    try:
+        async with aiosqlite.connect(DB_PATH) as conn:
+            cursor = await conn.execute(
+                "DELETE FROM notes WHERE id = ?",
+                (note_id,)
+            )
+            await conn.commit()
+            return cursor.rowcount > 0
+    except Exception as e:
+        print(f"⚠️ Fehler beim Löschen der Notiz: {e}")
+        return False
+
+
+async def get_all_notes() -> List[Dict[str, Any]]:
+    try:
+        async with aiosqlite.connect(DB_PATH) as conn:
+            conn.row_factory = aiosqlite.Row
+            async with conn.execute("SELECT id, content, created_at FROM notes ORDER BY id DESC") as cursor:
+                rows = await cursor.fetchall()
+                return [{"id": r["id"], "content": r["content"], "created_at": r["created_at"]} for r in rows]
+    except Exception as e:
+        print(f"⚠️ Fehler beim Laden der Notizen: {e}")
+        return []
 
 
 if __name__ == "__main__":

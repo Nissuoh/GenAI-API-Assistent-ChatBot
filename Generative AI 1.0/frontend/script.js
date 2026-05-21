@@ -147,13 +147,56 @@ function updateNextEventWidget() {
 
 function renderMarkdown(text) {
     let html = escapeHTML(text);
+    
+    // 1. Code-Blöcke vorübergehend extrahieren und sichern
+    const codeBlocks = [];
+    html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
+        const placeholder = `__LUMINA_CODE_BLOCK_${codeBlocks.length}__`;
+        codeBlocks.push(code);
+        return placeholder;
+    });
+
+    // 2. Inline-Markdown auf dem verbleibenden Fließtext anwenden
     html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
     html = html.replace(/`(.*?)`/g, '<code>$1</code>');
-    html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
-    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+
+    // 3. Listen zeilenweise verarbeiten, um gieriges Verschachteln zu verhindern
+    const lines = html.split('\n');
+    let inList = false;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('- ')) {
+            const content = line.substring(2).trim();
+            if (!inList) {
+                lines[i] = '<ul><li>' + content + '</li>';
+                inList = true;
+            } else {
+                lines[i] = '<li>' + content + '</li>';
+            }
+        } else {
+            if (inList) {
+                lines[i - 1] += '</ul>';
+                inList = false;
+            }
+        }
+    }
+    if (inList) {
+        lines[lines.length - 1] += '</ul>';
+    }
+    html = lines.join('\n');
+
+    // 4. Zeilenumbrüche in <br> umwandeln, aber nicht um Listen-Tags herum
     html = html.replace(/\n/g, '<br>');
+    html = html.replace(/(<\/?[ul|li]>)\s*<br>/gi, '$1');
+    html = html.replace(/<br>\s*(<\/?[ul|li]>)/gi, '$1');
+
+    // 5. Code-Blöcke unbeschädigt wieder einsetzen (Callback verhindert Interpolationsfehler mit $)
+    codeBlocks.forEach((code, index) => {
+        const placeholder = `__LUMINA_CODE_BLOCK_${index}__`;
+        html = html.replace(placeholder, () => `<pre><code>${code}</code></pre>`);
+    });
+
     return html;
 }
 
@@ -163,6 +206,25 @@ function copyToClipboard(text) {
     }).catch(() => {
         showToast('Kopieren fehlgeschlagen', 'error');
     });
+}
+
+function getMessageCleanText(msgEl) {
+    const clone = msgEl.cloneNode(true);
+    const actions = clone.querySelector('.message-actions');
+    if (actions) actions.remove();
+    return (clone.innerText || clone.textContent || "").trim();
+}
+
+function copyMessageText(btnElement) {
+    const msgEl = btnElement.closest('.message');
+    if (!msgEl) return;
+    copyToClipboard(getMessageCleanText(msgEl));
+}
+
+function speakMessageText(btnElement) {
+    const msgEl = btnElement.closest('.message');
+    if (!msgEl) return;
+    speakText(getMessageCleanText(msgEl));
 }
 
 function speakText(text) {
@@ -241,10 +303,29 @@ document.addEventListener('mouseup', () => {
     }
 });
 
-if (localStorage.getItem('theme') === 'dark') document.body.classList.add('dark-mode');
+function updateThemeIcon() {
+    const isDark = document.body.classList.contains('dark-mode');
+    const toggleBtn = document.getElementById('theme-toggle');
+    if (toggleBtn) {
+        if (isDark) {
+            toggleBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>`;
+            toggleBtn.title = "Lichtmodus einschalten";
+        } else {
+            toggleBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-moon"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>`;
+            toggleBtn.title = "Dunkelmodus einschalten";
+        }
+    }
+}
+
+if (localStorage.getItem('theme') === 'dark') {
+    document.body.classList.add('dark-mode');
+}
+updateThemeIcon();
+
 document.getElementById('theme-toggle').onclick = () => {
     document.body.classList.toggle('dark-mode');
     localStorage.setItem('theme', document.body.classList.contains('dark-mode') ? 'dark' : 'light');
+    updateThemeIcon();
 };
 
 document.getElementById('tts-btn').onclick = () => {
@@ -264,8 +345,27 @@ document.getElementById('cal-today').onclick = () => {
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         document.getElementById('day-modal').classList.add('hidden');
-        document.getElementById('help-modal').classList.add('hidden');
+        const helpModal = document.getElementById('help-modal');
+        if (helpModal) helpModal.classList.add('hidden');
     }
+    
+    // Calendar Keyboard Navigation (ArrowLeft/ArrowRight for months, 'H' for today)
+    if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+        const tabCalendar = document.getElementById('tab-calendar');
+        if (tabCalendar && tabCalendar.classList.contains('active')) {
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                document.getElementById('cal-prev').click();
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                document.getElementById('cal-next').click();
+            } else if (e.key.toLowerCase() === 'h') {
+                e.preventDefault();
+                document.getElementById('cal-today').click();
+            }
+        }
+    }
+
     if (e.ctrlKey && e.key === 'Enter') {
         e.preventDefault();
         sendMessage();
@@ -308,8 +408,9 @@ function renderGrid() {
         if (dayEvents.length > 0) {
             eventsHtml = dayEvents.slice(0, 3).map(e => {
                 const shortTitle = e.summary.length > 15 ? e.summary.substring(0, 15) + '…' : e.summary;
-                const color = getEventColor(e.summary);
-                return `<div class="cal-event" style="background:${color}" title="${escapeHTML(e.summary)}">${escapeHTML(shortTitle)}</div>`;
+                const colorVar = getEventColor(e.summary);
+                const category = colorVar.replace('var(--event-', '').replace(')', '');
+                return `<div class="cal-event category-${category}" title="${escapeHTML(e.summary)}">${escapeHTML(shortTitle)}</div>`;
             }).join('');
             if (dayEvents.length > 3) {
                 eventsHtml += `<div class="cal-event-more">+${dayEvents.length - 3}</div>`;
@@ -324,7 +425,11 @@ function renderGrid() {
     calGrid.innerHTML = html;
 
     document.querySelectorAll('.cal-cell[data-day]').forEach(cell => {
-        cell.onclick = () => openDayModal(parseInt(cell.getAttribute('data-day')));
+        cell.onclick = () => {
+            document.querySelectorAll('.cal-cell').forEach(c => c.classList.remove('selected'));
+            cell.classList.add('selected');
+            openDayModal(parseInt(cell.getAttribute('data-day')));
+        };
     });
 }
 
@@ -352,8 +457,16 @@ function openDayModal(day) {
     document.getElementById('day-modal').classList.remove('hidden');
 }
 
-document.getElementById('close-modal').onclick = () => document.getElementById('day-modal').classList.add('hidden');
-document.getElementById('day-modal').onclick = (e) => { if (e.target === document.getElementById('day-modal')) document.getElementById('day-modal').classList.add('hidden'); };
+document.getElementById('close-modal').onclick = () => {
+    document.getElementById('day-modal').classList.add('hidden');
+    document.querySelectorAll('.cal-cell').forEach(c => c.classList.remove('selected'));
+};
+document.getElementById('day-modal').onclick = (e) => {
+    if (e.target === document.getElementById('day-modal')) {
+        document.getElementById('day-modal').classList.add('hidden');
+        document.querySelectorAll('.cal-cell').forEach(c => c.classList.remove('selected'));
+    }
+};
 
 document.getElementById('cal-prev').onclick = () => { viewMonth--; if (viewMonth < 0) { viewMonth = 11; viewYear--; } loadCalendar(); };
 document.getElementById('cal-next').onclick = () => { viewMonth++; if (viewMonth > 11) { viewMonth = 0; viewYear++; } loadCalendar(); };
@@ -375,8 +488,8 @@ function appendMessage(role, text) {
         const actions = document.createElement('div');
         actions.className = 'message-actions';
         actions.innerHTML = `
-            <button class="msg-action-btn" onclick="copyToClipboard(this.parentElement.parentElement.textContent)">Kopieren</button>
-            <button class="msg-action-btn" onclick="speakText(this.parentElement.parentElement.textContent)">🔊</button>
+            <button class="msg-action-btn" onclick="copyMessageText(this)" title="Nachricht kopieren">📋 Kopieren</button>
+            <button class="msg-action-btn" onclick="speakMessageText(this)" title="Nachricht vorlesen">🔊 Vorlesen</button>
         `;
         d.appendChild(actions);
     }
@@ -411,6 +524,7 @@ async function refreshChat() {
 
             if (isAtBottom) chatBox.scrollTop = chatBox.scrollHeight;
             loadCalendar();
+            loadNotes();
         }
     } catch { }
 }
@@ -564,6 +678,222 @@ chatSection.addEventListener('drop', (e) => {
     }
 });
 
+// --- NOTEPAD TABS AND LOGIC (Lumina Obsidian Style) ---
+const tabCalendar = document.getElementById('tab-calendar');
+const tabNotepad = document.getElementById('tab-notepad');
+const calendarView = document.getElementById('calendar-view');
+const notepadView = document.getElementById('notepad-view');
+
+tabCalendar.onclick = () => {
+    tabCalendar.classList.add('active');
+    tabNotepad.classList.remove('active');
+    calendarView.classList.add('active-view');
+    calendarView.classList.remove('hidden-view');
+    notepadView.classList.add('hidden-view');
+    notepadView.classList.remove('active-view');
+    loadCalendar();
+};
+
+tabNotepad.onclick = () => {
+    tabNotepad.classList.add('active');
+    tabCalendar.classList.remove('active');
+    notepadView.classList.add('active-view');
+    notepadView.classList.remove('hidden-view');
+    calendarView.classList.add('hidden-view');
+    calendarView.classList.remove('active-view');
+    loadNotes();
+};
+
+const notesList = document.getElementById('notes-list');
+const noteInput = document.getElementById('note-input');
+const addNoteBtn = document.getElementById('add-note-btn');
+
+async function loadNotes() {
+    try {
+        const res = await fetch('/notes');
+        const data = await res.json();
+        renderNotes(data.notes || []);
+    } catch (e) {
+        console.error("Fehler beim Laden der Notizen:", e);
+    }
+}
+
+function renderNotes(notes) {
+    if (notes.length === 0) {
+        notesList.innerHTML = `
+            <div style="text-align: center; color: var(--text-muted); padding: 40px 10px; font-size: 0.9rem;">
+                Der Notizblock ist leer.<br>
+                Sag Lumina z.B.: "Erinnere mich an Milch kaufen".
+            </div>
+        `;
+        return;
+    }
+    
+    notesList.innerHTML = notes.map(note => {
+        let dateStr = "";
+        try {
+            if (note.created_at) {
+                const date = new Date(note.created_at.replace(" ", "T") + "Z");
+                dateStr = date.toLocaleDateString('de-DE', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+        } catch(err) {
+            dateStr = note.created_at;
+        }
+
+        return `
+            <div class="note-item" id="note-${note.id}">
+                <div class="note-content">
+                    <div>${escapeHTML(note.content)}</div>
+                    <div class="note-date">${dateStr}</div>
+                </div>
+                <button class="delete-note-btn" onclick="deleteNote(${note.id})" title="Notiz löschen">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash-2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+async function addManualNote() {
+    const text = noteInput.value.trim();
+    if (!text) return;
+    noteInput.value = '';
+    
+    try {
+        const res = await fetch('/notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: text })
+        });
+        if (res.ok) {
+            showToast('Notiz hinzugefügt', 'success');
+            loadNotes();
+        } else {
+            showToast('Fehler beim Hinzufügen', 'error');
+        }
+    } catch (e) {
+        showToast('Fehler beim Hinzufügen', 'error');
+    }
+}
+
+async function deleteNote(noteId) {
+    if (!confirm('Möchtest du diese Notiz wirklich löschen?')) return;
+    try {
+        const res = await fetch(`/notes/${noteId}`, { method: 'DELETE' });
+        if (res.ok) {
+            showToast('Notiz gelöscht', 'success');
+            loadNotes();
+        } else {
+            showToast('Fehler beim Löschen', 'error');
+        }
+    } catch (e) {
+        showToast('Fehler beim Löschen', 'error');
+    }
+}
+
+// Global machen für die onclick-Events
+window.deleteNote = deleteNote;
+
+addNoteBtn.onclick = addManualNote;
+noteInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        addManualNote();
+    }
+});
+
+// --- SPEECH RECOGNITION (Voice Input) ---
+let recognition = null;
+let isRecording = false;
+
+function initSpeechRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        showToast('Spracherkennung in diesem Browser nicht unterstützt', 'error');
+        const micBtnEl = document.getElementById('mic-btn');
+        if (micBtnEl) micBtnEl.style.display = 'none';
+        return;
+    }
+
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'de-DE';
+
+    recognition.onstart = () => {
+        isRecording = true;
+        const micBtnEl = document.getElementById('mic-btn');
+        if (micBtnEl) {
+            micBtnEl.classList.add('recording');
+            micBtnEl.title = "Spracheingabe stoppen";
+        }
+        showToast('Spracheingabe gestartet - Bitte sprechen...', 'info');
+    };
+
+    recognition.onend = () => {
+        isRecording = false;
+        const micBtnEl = document.getElementById('mic-btn');
+        if (micBtnEl) {
+            micBtnEl.classList.remove('recording');
+            micBtnEl.title = "Spracheingabe starten";
+        }
+    };
+
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        if (transcript) {
+            if (userInput.value) {
+                userInput.value += ' ' + transcript;
+            } else {
+                userInput.value = transcript;
+            }
+            userInput.dispatchEvent(new Event('input'));
+            userInput.focus();
+            showToast('Sprache erfolgreich erfasst!', 'success');
+        }
+    };
+
+    recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        if (event.error === 'not-allowed') {
+            showToast('Mikrofon-Zugriff verweigert', 'error');
+        } else if (event.error === 'no-speech') {
+            showToast('Keine Sprache erkannt', 'info');
+        } else {
+            showToast(`Fehler bei Spracherkennung: ${event.error}`, 'error');
+        }
+    };
+}
+
+function toggleSpeechRecognition() {
+    if (!recognition) {
+        initSpeechRecognition();
+    }
+    if (!recognition) return;
+
+    if (isRecording) {
+        recognition.stop();
+    } else {
+        try {
+            recognition.start();
+        } catch (e) {
+            console.error('Error starting recognition:', e);
+        }
+    }
+}
+
+const micBtn = document.getElementById('mic-btn');
+if (micBtn) {
+    micBtn.onclick = toggleSpeechRecognition;
+}
+
 loadCalendar(); 
+loadNotes();
 setInterval(refreshChat, 3000); 
 setInterval(loadCalendar, 30000);
+

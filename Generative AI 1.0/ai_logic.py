@@ -13,6 +13,7 @@ from database import (
     get_latest_calendar_context,
     save_calendar_context,
     save_info,
+    get_all_notes,
 )
 
 O_KEY = os.getenv("OPENAI_API_KEY")
@@ -26,11 +27,19 @@ MODEL_OPENROUTER = "openrouter/free"
 client_openai = AsyncOpenAI(api_key=O_KEY) if O_KEY else None
 client_gemini = genai.Client(api_key=G_KEY) if G_KEY else None
 
+# Globaler wiederverwendbarer HTTP-Client für schnellere API-Aufrufe (Keep-Alive)
+http_client = httpx.AsyncClient()
+
+
+async def close_http_client():
+    await http_client.aclose()
+
 
 async def build_system_instruction() -> str:
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     memories = await get_all_info()
     cal_context = await get_latest_calendar_context()
+    notes = await get_all_notes()
 
     memory_context = (
         "Fakten über den Nutzer:\n" + "\n".join([f"- {k}: {v}" for k, v in memories])
@@ -38,25 +47,49 @@ async def build_system_instruction() -> str:
         else "Keine spezifischen Nutzerfakten vorhanden."
     )
 
+    notes_context = (
+        "NOTIZBLOCK-INHALT:\n" + "\n".join([f"- ID: {n['id']} | Inhalt: {n['content']}" for n in notes])
+        if notes
+        else "Der Notizblock ist leer."
+    )
+
     return (
         f"Du bist Lumina, ein privater KI-Assistent. Aktuelle Zeit in Frankfurt am Main: {now}.\n\n"
-        f"{memory_context}\n"
+        f"{memory_context}\n\n"
         f"KALENDER-GEDÄCHTNIS:\n{cal_context}\n\n"
+        f"NOTIZBLOCK-GEDÄCHTNIS:\n{notes_context}\n\n"
         "VERHALTENSREGELN:\n"
         "1. Führe natürliche Unterhaltungen ohne ständige Erwähnung deiner Fähigkeiten.\n"
-        "2. FRAGE NIEMALS NACH BESTÄTIGUNG für Kalenderaktionen. Handle SOFORT.\n"
-        "3. KONTEXT-VERSTÄNDNIS: Analysiere immer den bisherigen Chatverlauf und das KALENDER-GEDÄCHTNIS! Wenn der Nutzer sagt 'Lösche das' oder 'Verschiebe den Termin', suche den exakten Termin-Namen aus dem Kontext. Nutze NIEMALS nur ein Datum als 'Title'.\n\n"
+        "2. FRAGE NIEMALS NACH BESTÄTIGUNG für Kalender- oder Notizblock-Aktionen. Handle SOFORT.\n"
+        "3. KONTEXT-VERSTÄNDNIS: Analysiere immer den bisherigen Chatverlauf und das KALENDER-GEDÄCHTNIS / NOTIZBLOCK-GEDÄCHTNIS!\n"
+        "4. INTELLIGENTE KLASSIFIZIERUNG (Entscheidung zwischen Kalender und Notizblock):\n"
+        "   - KALENDER: Feste Termine, Verabredungen oder Fristen mit einem konkreten Datum und/oder einer Uhrzeit (z. B. 'Meeting morgen um 14 Uhr', 'Zahnarzt am Freitag', 'Konzert am 15. Juni'). Erstelle hierfür einen [CALENDAR_EVENT] Block.\n"
+        "   - NOTIZBLOCK: Allgemeine Gedanken, Einkaufslisten, unstrukturierte Erinnerungen, Ideen oder To-Dos ohne festen Kalenderslot (z. B. 'Erinnere mich an Milch kaufen', 'Ich muss das Buch lesen', 'Klopapier holen', 'Coole Geschäftsidee aufschreiben'). Erstelle hierfür einen [NOTE_EVENT] Block.\n\n"
         "KALENDER-FUNKTIONEN:\n"
         "Du kannst Termine hinzufügen (add), löschen (delete), bearbeiten (edit) oder abrufen (list).\n"
-        "1. Bei 'list': Verwende bei 'Title' die Anzahl der Tage (z.B. '7' oder '-7') ODER ein exaktes Datum im Format 'YYYY-MM-DD' (z.B. '2025-03-07'), wenn der Nutzer nach einem ganz bestimmten Tag in der Vergangenheit/Zukunft fragt. Nenne bei 'list' NIEMALS selbst Termine im Text!\n"
+        "1. Bei 'list': Verwende bei 'Title' die Anzahl der Tage (z.B. '7' oder '-7') ODER ein exaktes Datum im Format 'YYYY-MM-DD', wenn nach einem ganz bestimmten Tag gefragt wird.\n"
         "2. Bei 'delete' / 'edit': Verwende bei 'Title' ZWINGEND den echten Namen des Termins.\n"
-        "3. WICHTIG: Erstelle den [CALENDAR_EVENT] Block nur bei echten Aktionen. Lass ungenutzte Felder KOMPLETT weg!\n\n"
-        "BEISPIEL FÜR 'DELETE' MIT KONTEXT:\n"
+        "3. Block-Format:\n"
         "[CALENDAR_EVENT]\n"
-        "Action: delete\n"
+        "Action: add\n"
         "Title: Zahnarzt\n"
-        "Start: 2026-03-21T00:00:00Z\n"
-        "[/CALENDAR_EVENT]"
+        "Start: 2026-03-21T14:30:00Z\n"
+        "[/CALENDAR_EVENT]\n\n"
+        "NOTIZBLOCK-FUNKTIONEN:\n"
+        "Du kannst Notizen hinzufügen (add), löschen (delete) oder auflisten (list).\n"
+        "1. Bei 'add': Gib den gewünschten Text im Feld 'Content' an.\n"
+        "2. Bei 'delete': Gib die ID der zu löschenden Notiz im Feld 'Id' an (siehe NOTIZBLOCK-GEDÄCHTNIS oben), ODER den ungefähren Text im Feld 'Content'.\n"
+        "3. Bei 'list': Zeigt alle Notizen an.\n"
+        "4. Block-Format:\n"
+        "[NOTE_EVENT]\n"
+        "Action: add\n"
+        "Content: Milch und Äpfel kaufen\n"
+        "[/NOTE_EVENT]\n\n"
+        "Beispiel für 'delete' einer Notiz:\n"
+        "[NOTE_EVENT]\n"
+        "Action: delete\n"
+        "Id: 5\n"
+        "[/NOTE_EVENT]"
     )
 
 
@@ -209,10 +242,9 @@ async def fetch_llm_response(message: str, image_bytes: bytes = None) -> dict:
                 "messages": payload_messages,
                 "reasoning": {"enabled": True},
             }
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, headers=headers, json=payload, timeout=45)
-                resp.raise_for_status()
-                data = resp.json()
+            resp = await http_client.post(url, headers=headers, json=payload, timeout=45)
+            resp.raise_for_status()
+            data = resp.json()
             ai_response_text = data["choices"][0]["message"]["content"]
             source = "OpenRouter"
             reasoning = data["choices"][0]["message"].get("reasoning")

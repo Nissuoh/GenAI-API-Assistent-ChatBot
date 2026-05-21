@@ -1,3 +1,11 @@
+import sys
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
+
 import os.path
 import datetime
 import re
@@ -5,6 +13,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from google.auth.exceptions import RefreshError
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
@@ -28,8 +37,12 @@ def get_calendar_service():
         if not creds:
             if not os.path.exists("credentials.json"):
                 return None
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            creds = flow.run_local_server(port=0)
+            try:
+                flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+                creds = flow.run_local_server(port=0)
+            except Exception as e:
+                print(f"❌ Autorisierungsfehler: Kein Browser verfügbar oder OAuth fehlgeschlagen: {e}")
+                return None
 
         with open("token.json", "w") as token:
             token.write(creds.to_json())
@@ -65,8 +78,12 @@ def add_event(
     try:
         res = service.events().insert(calendarId="primary", body=event).execute()
         return f"Erfolgreich hinzugefügt (Link: {res.get('htmlLink')})"
+    except HttpError as e:
+        return f"Google API Fehler ({e.resp.status}): {e.reason}"
+    except RefreshError:
+        return "Fehler: Die Google-Sitzung ist abgelaufen. Bitte authentifizieren Sie sich erneut."
     except Exception as e:
-        return f"Fehler: {e}"
+        return f"Unerwarteter Fehler: {e}"
 
 
 def get_events(days: int = 7, specific_date: str = None) -> str:
@@ -117,8 +134,12 @@ def get_events(days: int = 7, specific_date: str = None) -> str:
                 f"• {start[:10]} {start[11:16] if 'T' in start else ''}: {event.get('summary', 'Ohne Titel')}"
             )
         return "\n".join(lines)
+    except HttpError as e:
+        return f"Google API Fehler ({e.resp.status}): {e.reason}"
+    except RefreshError:
+        return "Fehler: Die Google-Sitzung ist abgelaufen. Bitte authentifizieren Sie sich erneut."
     except Exception as e:
-        return f"Fehler: {e}"
+        return f"Unerwarteter Fehler: {e}"
 
 
 def get_events_json(year: int = None, month: int = None) -> list:
@@ -250,5 +271,9 @@ def edit_event(
             .execute()
         )
         return f"Aktualisiert (Link: {res.get('htmlLink')})"
+    except HttpError as e:
+        return f"Google API Fehler ({e.resp.status}): {e.reason}"
+    except RefreshError:
+        return "Fehler: Die Google-Sitzung ist abgelaufen. Bitte authentifizieren Sie sich erneut."
     except Exception as e:
-        return f"Fehler: {e}"
+        return f"Unerwarteter Fehler: {e}"
