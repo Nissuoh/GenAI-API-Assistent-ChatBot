@@ -195,7 +195,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         audio_bytes = await voice_file.download_as_bytearray()
 
         # Transkribieren
-        user_msg = await transcribe_audio(bytes(audio_bytes))
+        user_msg = await transcribe_audio(bytes(audio_bytes), filename="voice.ogg")
 
         if not user_msg:
             await update.message.reply_text("⚠️ Sprachmemo konnte nicht transkribiert werden oder war leer.")

@@ -260,9 +260,9 @@ async def fetch_gemini_vision(message: str, image_bytes: bytes) -> dict:
     return await fetch_llm_response(message, image_bytes)
 
 
-async def transcribe_audio(audio_bytes: bytes) -> str:
+async def transcribe_audio(audio_bytes: bytes, filename: str = "voice.ogg") -> str:
     """
-    Transkribiert ogg/opus Audiodaten in Text.
+    Transkribiert ogg/opus oder webm Audiodaten in Text.
     Nutzt primär OpenAI Whisper, sekundär Google Gemini als Fallback.
     """
     import io
@@ -270,9 +270,9 @@ async def transcribe_audio(audio_bytes: bytes) -> str:
     # 1. Versuch mit OpenAI Whisper (falls konfiguriert)
     if client_openai:
         try:
-            print("🎙️ Transkribiere mit OpenAI Whisper...")
+            print(f"🎙️ Transkribiere mit OpenAI Whisper ({filename})...")
             buffer = io.BytesIO(audio_bytes)
-            buffer.name = "voice.ogg"  # Whisper benötigt eine Dateiendung
+            buffer.name = filename  # Whisper benötigt eine passende Dateiendung
             resp = await client_openai.audio.transcriptions.create(
                 model="whisper-1",
                 file=buffer,
@@ -290,11 +290,12 @@ async def transcribe_audio(audio_bytes: bytes) -> str:
             print("🎙️ Transkribiere mit Google Gemini...")
             prompt = "Transkribiere das Audio. Gib AUSSCHLIESSLICH das Transkript zurück, ohne Kommentare oder Zusätze."
             
+            mime_type = "audio/webm" if filename.endswith(".webm") else "audio/ogg"
             resp = await asyncio.to_thread(
                 client_gemini.models.generate_content,
                 model=MODEL_GEMINI,
                 contents=[
-                    types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg"),
+                    types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
                     prompt
                 ]
             )

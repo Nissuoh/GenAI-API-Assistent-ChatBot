@@ -807,82 +807,121 @@ noteInput.addEventListener('keydown', (e) => {
     }
 });
 
-// --- SPEECH RECOGNITION (Voice Input) ---
-let recognition = null;
+// --- SPEECH RECOGNITION (Voice Input via MediaRecorder & Server Transcription) ---
+let mediaRecorder = null;
+let audioChunks = [];
+let voiceStream = null;
 let isRecording = false;
 
-function initSpeechRecognition() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-        showToast('Spracherkennung in diesem Browser nicht unterstützt', 'error');
-        const micBtnEl = document.getElementById('mic-btn');
-        if (micBtnEl) micBtnEl.style.display = 'none';
-        return;
-    }
-
-    recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = 'de-DE';
-
-    recognition.onstart = () => {
-        isRecording = true;
-        const micBtnEl = document.getElementById('mic-btn');
-        if (micBtnEl) {
-            micBtnEl.classList.add('recording');
-            micBtnEl.title = "Spracheingabe stoppen";
-        }
-        showToast('Spracheingabe gestartet - Bitte sprechen...', 'info');
-    };
-
-    recognition.onend = () => {
-        isRecording = false;
-        const micBtnEl = document.getElementById('mic-btn');
-        if (micBtnEl) {
-            micBtnEl.classList.remove('recording');
-            micBtnEl.title = "Spracheingabe starten";
-        }
-    };
-
-    recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        if (transcript) {
-            if (userInput.value) {
-                userInput.value += ' ' + transcript;
-            } else {
-                userInput.value = transcript;
-            }
-            userInput.dispatchEvent(new Event('input'));
-            userInput.focus();
-            showToast('Sprache erfolgreich erfasst!', 'success');
-        }
-    };
-
-    recognition.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        if (event.error === 'not-allowed') {
-            showToast('Mikrofon-Zugriff verweigert', 'error');
-        } else if (event.error === 'no-speech') {
-            showToast('Keine Sprache erkannt', 'info');
-        } else {
-            showToast(`Fehler bei Spracherkennung: ${event.error}`, 'error');
-        }
-    };
-}
-
-function toggleSpeechRecognition() {
-    if (!recognition) {
-        initSpeechRecognition();
-    }
-    if (!recognition) return;
-
+async function toggleSpeechRecognition() {
     if (isRecording) {
-        recognition.stop();
+        // Stop recording
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
     } else {
+        // Prevent double recording or action collision
+        if (isProcessing) {
+            showToast('Bitte warte, bis die aktuelle Anfrage fertig ist.', 'info');
+            return;
+        }
+
+        // Start recording
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            showToast('Mikrofon-Aufnahme in diesem Browser nicht unterstützt', 'error');
+            return;
+        }
+
         try {
-            recognition.start();
+            voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioChunks = [];
+
+            // Detect best supported mimeType
+            let options = {};
+            if (MediaRecorder.isTypeSupported('audio/webm')) {
+                options = { mimeType: 'audio/webm' };
+            } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+                options = { mimeType: 'audio/ogg' };
+            }
+
+            mediaRecorder = new MediaRecorder(voiceStream, options);
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data && event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = async () => {
+                // Stop all tracks to turn off mic light immediately
+                if (voiceStream) {
+                    voiceStream.getTracks().forEach(track => track.stop());
+                }
+
+                // Reset UI
+                const micBtnEl = document.getElementById('mic-btn');
+                if (micBtnEl) {
+                    micBtnEl.classList.remove('recording');
+                    micBtnEl.title = "Sprachnachricht aufnehmen";
+                }
+                userInput.placeholder = "Nachricht an Lumina...";
+                userInput.disabled = false;
+                isRecording = false;
+
+                const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                if (audioBlob.size === 0) {
+                    showToast('Aufnahme war leer', 'error');
+                    return;
+                }
+
+                // Show processing / typing indicator
+                isProcessing = true;
+                appendTypingIndicator();
+
+                try {
+                    const fd = new FormData();
+                    const ext = mediaRecorder.mimeType && mediaRecorder.mimeType.includes('ogg') ? 'ogg' : 'webm';
+                    fd.append('file', audioBlob, `voice.${ext}`);
+
+                    const res = await fetch('/voice', {
+                        method: 'POST',
+                        body: fd
+                    });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        showToast('Sprachnachricht erfolgreich gesendet', 'success');
+                        await refreshChat();
+                    } else {
+                        showToast('Fehler bei der Sprachverarbeitung', 'error');
+                    }
+                } catch (e) {
+                    console.error('Upload error:', e);
+                    showToast('Upload-Fehler bei der Sprachnachricht', 'error');
+                } finally {
+                    removeTypingIndicator();
+                    isProcessing = false;
+                    loadCalendar();
+                    loadNotes();
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+
+            const micBtnEl = document.getElementById('mic-btn');
+            if (micBtnEl) {
+                micBtnEl.classList.add('recording');
+                micBtnEl.title = "Aufnahme stoppen und senden";
+            }
+            userInput.placeholder = "Aufnahme läuft... (Klicken zum Senden)";
+            userInput.disabled = true;
+            showToast('Sprachnotiz-Aufnahme gestartet...', 'info');
+
         } catch (e) {
-            console.error('Error starting recognition:', e);
+            console.error('Error starting MediaRecorder:', e);
+            showToast('Mikrofon-Zugriff verweigert oder Fehler bei Aufnahme-Start', 'error');
         }
     }
 }
