@@ -1,4 +1,4 @@
-# 🤖 SAMI – Strategic Agentic Multilayer Intelligence: Lumina Personal Assistant Suite
+# 🤖 Lumina – Personal Assistant Suite
 
 [![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-v0.100%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -6,7 +6,7 @@
 [![Google Calendar](https://img.shields.io/badge/Google%20Calendar-API-4285F4?logo=google-calendar&logoColor=white)](https://developers.google.com/calendar)
 [![Telegram Bot](https://img.shields.io/badge/Telegram%20Bot-API-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots)
 
-**SAMI (Lumina Personal Assistant Suite)** ist ein hochgradig optimierter, privater KI-Assistent der nächsten Generation. Er vereint ein synchronisiertes **Telegram-Bot-Interface** und ein voll-integriertes, **premium glassmorphes Web-Interface** zu einer nahtlosen Produktivitätszentrale. 
+**Lumina (Personal Assistant Suite)** ist ein hochgradig optimierter, privater KI-Assistent der nächsten Generation. Er vereint ein synchronisiertes **Telegram-Bot-Interface** und ein voll-integriertes, **premium glassmorphes Web-Interface** zu einer nahtlosen Produktivitätszentrale. 
 
 Das System verwaltet eigenständig Ihren Google Kalender, verfügt über ein intelligentes, kontextsensitives Notizblock-System, extrahiert Dokumentendaten aus Bildern sowie PDFs und nutzt ein asynchrones SQLite-Langzeitgedächtnis im WAL-Modus mit unbegrenzter Ausfallsicherheit.
 
@@ -15,9 +15,9 @@ Das System verwaltet eigenständig Ihren Google Kalender, verfügt über ein int
 ## 🌟 Kernkompetenzen & Highlights
 
 * 📅 **Autonomer Google Calendar Manager (`[CALENDAR_EVENT]`)**: Termine über natürliche Sprache abfragen, erstellen, verschieben, anpassen oder löschen. Automatische Time-Slot-Konflikterkennung.
-* 📝 **Intelligenter SAMI-Notizblock (`[NOTE_EVENT]`)**: Automatisierte KI-Klassifizierung trennt lose Gedanken/To-Dos von festen Kalenderterminen und leitet sie in den lokalen, tabs-basierten Notizblock.
-* 🧠 **SAMI Context Engine (Langzeitgedächtnis)**: SQLite-Datenbank im **WAL-Modus** (Write-Ahead Logging) garantiert parallele, sperrfreie Lese- und Schreibvorgänge unter hoher Polling-Last. Merkt sich Vorlieben und Kontexte dauerhaft.
-* 📄 **Multimodale Extraktion & OCR**: Upload von Bildern (Vision) oder PDFs (PyMuPDF) – SAMI extrahiert Termindaten, Absender und Details vollautomatisch und pflegt sie in Ihren Kalender ein.
+* 📝 **Intelligenter Lumina-Notizblock (`[NOTE_EVENT]`)**: Automatisierte KI-Klassifizierung trennt lose Gedanken/To-Dos von festen Kalenderterminen und leitet sie in den lokalen, tabs-basierten Notizblock.
+* 🧠 **Lumina Context Engine (Langzeitgedächtnis)**: SQLite-Datenbank im **WAL-Modus** (Write-Ahead Logging) garantiert parallele, sperrfreie Lese- und Schreibvorgänge unter hoher Polling-Last. Merkt sich Vorlieben und Kontexte dauerhaft.
+* 📄 **Multimodale Extraktion & OCR**: Upload von Bildern (Vision) oder PDFs (PyMuPDF) – Lumina extrahiert Termindaten, Absender und Details vollautomatisch und pflegt sie in Ihren Kalender ein.
 * 🎙️ **Native Sprachsteuerung & Audio-Player (Web Speech API & MediaRecorder)**: Integrierter Mikrofon-Button im Web-Interface ermöglicht die intuitive Spracheingabe mit gleichzeitiger Audio-Aufnahme. Aufgenommene Sprachmemos werden als **premium abspielbare Sprachnachrichten** mit edel gestalteten, glassmorphen Audio-Playern direkt im Chat-Verlauf gerendert, mitsamt dem transkribierten Text in Kursivschrift darunter.
 * 🖥️ **Premium Glassmorphic Web-Interface**:
   * **Ultra-flüssiges Panel-Resizing:** Verzögerungsfreies Ziehen und Verschieben des Trennbalkens zwischen Kalender und Chat zur flexiblen Layout-Größenanpassung (optimiert mit globaler Deaktivierung von Transitions während des Resizing-Vorgangs).
@@ -30,14 +30,14 @@ Das System verwaltet eigenständig Ihren Google Kalender, verfügt über ein int
 
 ## 🏗️ System-Architektur
 
-Das folgende Diagramm veranschaulicht das Zusammenspiel zwischen den Frontend-Schnittstellen, dem SAMI Core-Layer und den angebundenen Speicher- und Cloud-Ressourcen:
+Das folgende Diagramm veranschaulicht das Zusammenspiel zwischen den Frontend-Schnittstellen, dem Lumina Core-Layer und den angebundenen Speicher- und Cloud-Ressourcen:
 
 ```mermaid
 graph TD
     User([Benutzer]) <-->|Web-Dashboard / Spracheingabe| Web[FastAPI Web-Interface]
     User <-->|Telegram-Chat / Dokumenten-Upload| TG[Telegram Bot API]
     
-    subgraph SAMI Core Layer
+    subgraph Lumina Core Layer
         Web <-->|FastAPI Router & API| Main[main.py Backend]
         TG <-->|Async Event Handler| Bot[telegram_bot.py]
         
@@ -69,7 +69,7 @@ graph TD
 Generative AI 1.0/
 ├── frontend/               # Glassmorphic Web-Interface
 │   ├── index.html          # Strukturierte HTML5-Basis mit SVG-Vektorgrafiken
-│   ├── style.css           # Premium Lumina/SAMI Styling-System & Responsive Grids
+│   ├── style.css           # Premium Lumina Styling-System & Responsive Grids
 │   └── script.js           # Event-Handling, Speech API & Tastatur-Navigation
 ├── ai_logic.py             # LLM Prompt Engineering & persistentes HTTPX Session Connection-Pooling
 ├── database.py             # Asynchrone SQLite-Schnittstelle im hochperformanten WAL-Modus
@@ -169,4 +169,4 @@ Für eine erstklassige UX lässt sich der Kalender im Web-Dashboard vollständig
 
 Dieses Projekt wurde für den privaten und professionellen Gebrauch als intelligenter Alltags-Assistent entwickelt. Mitwirkende sind jederzeit willkommen, Issues zu eröffnen oder Pull Requests einzureichen. 
 
-*Entwickelt unter dem SAMI Core Design- und Performance-Standard.*
+*Entwickelt unter dem Lumina Core Design- und Performance-Standard.*
