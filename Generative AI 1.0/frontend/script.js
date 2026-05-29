@@ -1,5 +1,5 @@
 const chatBox = document.getElementById('chat-box'), userInput = document.getElementById('user-input');
-const sendBtn = document.getElementById('send-btn'), uploadBtn = document.getElementById('upload-btn'), fileInput = document.getElementById('file-input');
+const actionBtn = document.getElementById('action-btn'), uploadBtn = document.getElementById('upload-btn'), fileInput = document.getElementById('file-input');
 const calGrid = document.getElementById('calendar-grid'), calMonth = document.getElementById('cal-month');
 const resizeHandle = document.getElementById('resize-handle');
 const calendarPanel = document.getElementById('calendar-panel');
@@ -560,6 +560,7 @@ async function sendMessage() {
     
     isProcessing = true; 
     userInput.value = '';
+    updateActionButton();
     appendMessage('user', m);
     chatBox.scrollTop = chatBox.scrollHeight;
     appendTypingIndicator();
@@ -580,10 +581,37 @@ async function sendMessage() {
     }
 }
 
-sendBtn.onclick = sendMessage; 
+// --- WHATSAPP-STYLE ACTION BUTTON (Mic ↔ Send) ---
+const MIC_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-mic"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>`;
+const SEND_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-send-horizontal"><path d="m3 3 3 9-3 9 19-9Z"/><path d="M6 12h16"/></svg>`;
+
+let actionMode = 'mic'; // 'mic' or 'send'
+
+function updateActionButton() {
+    const hasText = userInput.value.trim().length > 0;
+    const newMode = hasText ? 'send' : 'mic';
+    
+    if (newMode !== actionMode) {
+        actionMode = newMode;
+        actionBtn.innerHTML = actionMode === 'send' ? SEND_SVG : MIC_SVG;
+        actionBtn.title = actionMode === 'send' ? 'Nachricht senden' : 'Sprachnachricht aufnehmen';
+        actionBtn.classList.toggle('send-mode', actionMode === 'send');
+    }
+}
+
+actionBtn.onclick = () => {
+    if (actionMode === 'send') {
+        sendMessage();
+    } else {
+        toggleSpeechRecognition();
+    }
+};
 
 userInput.addEventListener('input', (e) => {
     const value = e.target.value;
+    
+    // Update action button (mic ↔ send)
+    updateActionButton();
     
     if (value === '') {
         hideCommandDropdown();
@@ -830,7 +858,7 @@ noteInput.addEventListener('keydown', (e) => {
     }
 });
 
-// --- SPEECH RECOGNITION & AUDIO RECORDING ---
+// --- SPEECH RECOGNITION & AUDIO RECORDING (WhatsApp-Style: Tap + Press-and-Hold) ---
 let recognition = null;
 let mediaRecorder = null;
 let audioChunks = [];
@@ -838,6 +866,10 @@ let userMediaStream = null;
 let isRecording = false;
 let recordTimerInterval = null;
 let recordSeconds = 0;
+let holdTimer = null;
+let isHoldMode = false;
+
+const STOP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square"><rect width="14" height="14" x="5" y="5" rx="2"/></svg>`;
 
 function formatTime(sec) {
     const m = Math.floor(sec / 60).toString().padStart(2, '0');
@@ -852,7 +884,8 @@ async function toggleSpeechRecognition() {
         return;
     }
 
-    const micBtnEl = document.getElementById('mic-btn');
+    const STOP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square"><rect width="14" height="14" x="5" y="5" rx="2"/></svg>`;
+    const micBtnEl = actionBtn;
 
     if (isRecording) {
         // Stop recording
@@ -901,6 +934,7 @@ async function toggleSpeechRecognition() {
 
             if (micBtnEl) {
                 micBtnEl.classList.add('recording');
+                micBtnEl.innerHTML = STOP_SVG;
                 micBtnEl.title = "Aufnahme stoppen und senden";
             }
 
@@ -951,8 +985,11 @@ async function toggleSpeechRecognition() {
             // Reset UI
             if (micBtnEl) {
                 micBtnEl.classList.remove('recording');
+                micBtnEl.innerHTML = MIC_SVG;
                 micBtnEl.title = "Sprachnachricht aufnehmen";
+                micBtnEl.classList.remove('send-mode');
             }
+            actionMode = 'mic';
             userInput.placeholder = "Nachricht an Lumina...";
             userInput.disabled = false;
             isRecording = false;
@@ -1007,10 +1044,7 @@ async function toggleSpeechRecognition() {
     }
 }
 
-const micBtn = document.getElementById('mic-btn');
-if (micBtn) {
-    micBtn.onclick = toggleSpeechRecognition;
-}
+// actionBtn click is already bound above via the WhatsApp-style toggle logic
 
 loadCalendar(); 
 loadNotes();

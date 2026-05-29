@@ -263,16 +263,63 @@ async def fetch_gemini_vision(message: str, image_bytes: bytes) -> dict:
 async def transcribe_audio(audio_bytes: bytes, filename: str = "voice.ogg") -> str:
     """
     Transkribiert ogg/opus oder webm Audiodaten in Text.
-    Nutzt primär OpenAI Whisper, sekundär Google Gemini als Fallback.
+    Primär: Lokale Offline-Transkription mit faster-whisper (kein API-Key nötig).
+    Fallback: OpenAI Whisper API, dann Google Gemini.
     """
     import io
-    
-    # 1. Versuch mit OpenAI Whisper (falls konfiguriert)
+    import tempfile
+
+    # ──────────────────────────────────────────────────────────
+    # 1. PRIMÄR: Lokale Offline-Transkription mit faster-whisper
+    # ──────────────────────────────────────────────────────────
+    try:
+        # Stelle sicher, dass ffmpeg im PATH ist (via imageio-ffmpeg Bundle)
+        import imageio_ffmpeg
+        ffmpeg_dir = os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
+        if ffmpeg_dir not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
+
+        from faster_whisper import WhisperModel
+
+        print(f"🎙️ Lokale Transkription mit faster-whisper ({filename})...")
+
+        # Audio-Bytes in eine temporäre Datei schreiben
+        ext = os.path.splitext(filename)[1] or ".ogg"
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(audio_bytes)
+            tmp_path = tmp.name
+
+        try:
+            # Modell laden (beim ersten Aufruf wird es heruntergeladen, ~75MB für "base")
+            model = WhisperModel("base", device="cpu", compute_type="int8")
+            segments, info = model.transcribe(tmp_path, language="de")
+            transcript = " ".join(seg.text.strip() for seg in segments).strip()
+
+            if transcript:
+                print(f"✅ Lokale Transkription erfolgreich: {transcript}")
+                return transcript
+            else:
+                print("⚠️ Lokale Transkription lieferte leeres Ergebnis.")
+        finally:
+            # Temporäre Datei aufräumen
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    except ImportError as e:
+        print(f"⚠️ faster-whisper nicht installiert, überspringe lokale Transkription: {e}")
+    except Exception as e:
+        print(f"⚠️ Lokale Transkription fehlgeschlagen: {e}")
+
+    # ──────────────────────────────────────────────────────────
+    # 2. FALLBACK: OpenAI Whisper API (falls konfiguriert)
+    # ──────────────────────────────────────────────────────────
     if client_openai:
         try:
             print(f"🎙️ Transkribiere mit OpenAI Whisper ({filename})...")
             buffer = io.BytesIO(audio_bytes)
-            buffer.name = filename  # Whisper benötigt eine passende Dateiendung
+            buffer.name = filename
             resp = await client_openai.audio.transcriptions.create(
                 model="whisper-1",
                 file=buffer,
@@ -284,12 +331,14 @@ async def transcribe_audio(audio_bytes: bytes, filename: str = "voice.ogg") -> s
         except Exception as e:
             print(f"⚠️ OpenAI Whisper Fehler: {e}")
 
-    # 2. Fallback mit Google Gemini (falls konfiguriert)
+    # ──────────────────────────────────────────────────────────
+    # 3. FALLBACK: Google Gemini (falls konfiguriert)
+    # ──────────────────────────────────────────────────────────
     if client_gemini:
         try:
             print("🎙️ Transkribiere mit Google Gemini...")
             prompt = "Transkribiere das Audio. Gib AUSSCHLIESSLICH das Transkript zurück, ohne Kommentare oder Zusätze."
-            
+
             mime_type = "audio/webm" if filename.endswith(".webm") else "audio/ogg"
             resp = await asyncio.to_thread(
                 client_gemini.models.generate_content,
@@ -308,4 +357,5 @@ async def transcribe_audio(audio_bytes: bytes, filename: str = "voice.ogg") -> s
 
     print("❌ Keine Transkriptions-Engine konnte das Audio verarbeiten.")
     return ""
+
 
